@@ -980,7 +980,10 @@ mystique_recalctimings(svga_t *svga)
         svga->lowres        = 0;
         svga->char_width    = 8;
         svga->hdisp         = (int) (((uint32_t) (svga->crtc[1] + 1)) << 3);
-        svga->hdisp_time    = svga->hdisp;
+        /* In Power Graphic mode the horizontal counter ticks once per 8 pixels at
+           every depth, and the core builds the line from hdisp_time against htotal
+           in those ticks - so this is CRTC1 + 1, not the pixel count. */
+        svga->hdisp_time    = svga->hdisp >> 3;
         svga->rowoffset     = svga->crtc[0x13] | ((mystique->crtcext_regs[0] & CRTCX_R0_OFFSET_MASK) << 4);
 
         svga->dots_per_clock  = 8;
