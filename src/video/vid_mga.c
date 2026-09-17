@@ -62,6 +62,17 @@
 #define DMA_POLL_TIME_US 100 /*100us*/
 #define DMA_MAX_WORDS    (20 * 14) /*280 quad words per 100us poll*/
 
+/*A register combination the hardware accepts but this model does not implement
+  must not stop the emulator - the silicon draws something wrong instead. Each
+  site reports once per run; the flag is atomic because the drawing engine runs
+  on the FIFO thread. The caller must still leave the engine able to progress.*/
+#define mystique_unimpl(...)                               \
+    do {                                                   \
+        static atomic_flag reported = ATOMIC_FLAG_INIT;    \
+        if (!atomic_flag_test_and_set(&reported))          \
+            pclog("vid_mga: unimplemented: " __VA_ARGS__); \
+    } while (0)
+
 /*These registers are also mirrored into 0x1dxx, with the mirrored versions starting
   the blitter*/
 #define REG_DWGCTL       0x1c00
@@ -3024,7 +3035,10 @@ run_dma(mystique_t *mystique)
                         break;
 
                     default:
-                        fatal("MGA_DMA_STATE_PRI: mode %i\n", mystique->dma.primaddress & DMA_MODE_MASK);
+                        mystique_unimpl("MGA_DMA_STATE_PRI: mode %i\n", mystique->dma.primaddress & DMA_MODE_MASK);
+                        mystique->endprdmasts_pending = 1;
+                        mystique->dma.state           = MGA_DMA_STATE_IDLE;
+                        break;
                 }
                 break;
 
@@ -3137,7 +3151,10 @@ run_dma(mystique_t *mystique)
                         break;
 
                     default:
-                        fatal("MGA_DMA_STATE_SEC: mode %i\n", mystique->dma.secaddress & DMA_MODE_MASK);
+                        mystique_unimpl("MGA_DMA_STATE_SEC: mode %i\n", mystique->dma.secaddress & DMA_MODE_MASK);
+                        mystique->endprdmasts_pending = 1;
+                        mystique->dma.state           = MGA_DMA_STATE_IDLE;
+                        break;
                 }
                 break;
 
@@ -3495,18 +3512,32 @@ blit_idump_idump(mystique_t *mystique)
                             break;
 
                         default:
-                            fatal("IDUMP DWGCTRL_BLTMOD_BU32RGB %x %08x\n", mystique->maccess_running & MACCESS_PWIDTH_MASK, mystique->maccess_running);
+                            mystique_unimpl("IDUMP DWGCTRL_BLTMOD_BU32RGB %x %08x\n", mystique->maccess_running & MACCESS_PWIDTH_MASK, mystique->maccess_running);
+                            if (mystique->busy) {
+                                mystique->busy = 0;
+                                mystique->blitter_complete_refcount++;
+                            }
+                            break;
                     }
                     break;
 
                 default:
-                    fatal("IDUMP DWGCTRL_ATYPE_RPL %08x %08x\n", mystique->dwgreg.dwgctrl_running & DWGCTRL_BLTMOD_MASK, mystique->dwgreg.dwgctrl_running);
+                    mystique_unimpl("IDUMP DWGCTRL_ATYPE_RPL %08x %08x\n", mystique->dwgreg.dwgctrl_running & DWGCTRL_BLTMOD_MASK, mystique->dwgreg.dwgctrl_running);
+                    if (mystique->busy) {
+                        mystique->busy = 0;
+                        mystique->blitter_complete_refcount++;
+                    }
                     break;
             }
             break;
 
         default:
-            fatal("Unknown IDUMP atype %03x %08x\n", mystique->dwgreg.dwgctrl_running & DWGCTRL_ATYPE_MASK, mystique->dwgreg.dwgctrl_running);
+            mystique_unimpl("Unknown IDUMP atype %03x %08x\n", mystique->dwgreg.dwgctrl_running & DWGCTRL_ATYPE_MASK, mystique->dwgreg.dwgctrl_running);
+            if (mystique->busy) {
+                mystique->busy = 0;
+                mystique->blitter_complete_refcount++;
+            }
+            break;
     }
 
     return val;
@@ -3579,7 +3610,8 @@ blit_fbitblt(mystique_t *mystique)
                         break;
 
                     default:
-                        fatal("BITBLT RPL BFCOL PWIDTH %x %08x\n", mystique->maccess_running & MACCESS_PWIDTH_MASK, mystique->dwgreg.dwgctrl_running);
+                        mystique_unimpl("BITBLT RPL BFCOL PWIDTH %x %08x\n", mystique->maccess_running & MACCESS_PWIDTH_MASK, mystique->dwgreg.dwgctrl_running);
+                        break;
                 }
             }
 
@@ -3791,7 +3823,9 @@ blit_iload_iload(mystique_t *mystique, uint32_t data, int size)
                                 break;
 
                             default:
-                                fatal("ILOAD RSTR/RPL BFCOL pwidth %08x\n", mystique->maccess_running & MACCESS_PWIDTH_MASK);
+                                mystique_unimpl("ILOAD RSTR/RPL BFCOL pwidth %08x\n", mystique->maccess_running & MACCESS_PWIDTH_MASK);
+                                size = 0;
+                                break;
                         }
 
                         if (mystique->dwgreg.xdst == mystique->dwgreg.fxright) {
@@ -3861,7 +3895,9 @@ blit_iload_iload(mystique_t *mystique, uint32_t data, int size)
                                     break;
 
                                 default:
-                                    fatal("ILOAD RSTR/RPL BMONOWF pwidth %08x\n", mystique->maccess_running & MACCESS_PWIDTH_MASK);
+                                    mystique_unimpl("ILOAD RSTR/RPL BMONOWF pwidth %08x\n", mystique->maccess_running & MACCESS_PWIDTH_MASK);
+                                    size = 0;
+                                    break;
                             }
                         }
 
@@ -3923,7 +3959,9 @@ blit_iload_iload(mystique_t *mystique, uint32_t data, int size)
                                     break;
 
                                 default:
-                                    fatal("ILOAD RSTR/RPL BU24RGB pwidth %08x\n", mystique->maccess_running & MACCESS_PWIDTH_MASK);
+                                    mystique_unimpl("ILOAD RSTR/RPL BU24RGB pwidth %08x\n", mystique->maccess_running & MACCESS_PWIDTH_MASK);
+                                    size = 0;
+                                    break;
                             }
                         }
 
@@ -4085,7 +4123,9 @@ blit_iload_iload(mystique_t *mystique, uint32_t data, int size)
                                     break;
 
                                 default:
-                                    fatal("ILOAD RSTR/RPL BU32RGB pwidth %08x\n", mystique->maccess_running & MACCESS_PWIDTH_MASK);
+                                    mystique_unimpl("ILOAD RSTR/RPL BU32RGB pwidth %08x\n", mystique->maccess_running & MACCESS_PWIDTH_MASK);
+                                    size = 0;
+                                    break;
                             }
                         }
 
@@ -4108,13 +4148,22 @@ blit_iload_iload(mystique_t *mystique, uint32_t data, int size)
                     break;
 
                 default:
-                    fatal("ILOAD DWGCTRL_ATYPE_RPL\n");
+                    mystique_unimpl("ILOAD DWGCTRL_ATYPE_RPL\n");
+                    if (mystique->busy) {
+                        mystique->busy = 0;
+                        mystique->blitter_complete_refcount++;
+                    }
                     break;
             }
             break;
 
         default:
-            fatal("Unknown ILOAD iload atype %03x %08x\n", mystique->dwgreg.dwgctrl_running & DWGCTRL_ATYPE_MASK, mystique->dwgreg.dwgctrl_running);
+            mystique_unimpl("Unknown ILOAD iload atype %03x %08x\n", mystique->dwgreg.dwgctrl_running & DWGCTRL_ATYPE_MASK, mystique->dwgreg.dwgctrl_running);
+            if (mystique->busy) {
+                mystique->busy = 0;
+                mystique->blitter_complete_refcount++;
+            }
+            break;
     }
 }
 
@@ -4174,13 +4223,22 @@ blit_iload_iload_scale(mystique_t *mystique, uint32_t data, int size)
                     break;
 
                 default:
-                    fatal("blit_iload_iload_scale BUYUV pwidth %i\n", mystique->maccess_running & MACCESS_PWIDTH_MASK);
+                    mystique_unimpl("blit_iload_iload_scale BUYUV pwidth %i\n", mystique->maccess_running & MACCESS_PWIDTH_MASK);
+                    if (mystique->busy) {
+                        mystique->busy = 0;
+                        mystique->blitter_complete_refcount++;
+                    }
+                    return;
             }
             break;
 
         default:
-            fatal("blit_iload_iload_scale bltmod %08x\n", mystique->dwgreg.dwgctrl_running & DWGCTRL_BLTMOD_MASK);
-            break;
+            mystique_unimpl("blit_iload_iload_scale bltmod %08x\n", mystique->dwgreg.dwgctrl_running & DWGCTRL_BLTMOD_MASK);
+            if (mystique->busy) {
+                mystique->busy = 0;
+                mystique->blitter_complete_refcount++;
+            }
+            return;
     }
 
     switch (mystique->maccess_running & MACCESS_PWIDTH_MASK) {
@@ -4253,7 +4311,12 @@ blit_iload_iload_scale(mystique_t *mystique, uint32_t data, int size)
             break;
 
         default:
-            fatal("ILOAD_SCALE pwidth %08x\n", mystique->maccess_running & MACCESS_PWIDTH_MASK);
+            mystique_unimpl("ILOAD_SCALE pwidth %08x\n", mystique->maccess_running & MACCESS_PWIDTH_MASK);
+            if (mystique->busy) {
+                mystique->busy = 0;
+                mystique->blitter_complete_refcount++;
+            }
+            break;
     }
 }
 
@@ -4320,8 +4383,12 @@ blit_iload_iload_high(mystique_t *mystique, uint32_t data, int size)
             break;
 
         default:
-            fatal("blit_iload_iload_high bltmod %08x\n", mystique->dwgreg.dwgctrl_running & DWGCTRL_BLTMOD_MASK);
-            break;
+            mystique_unimpl("blit_iload_iload_high bltmod %08x\n", mystique->dwgreg.dwgctrl_running & DWGCTRL_BLTMOD_MASK);
+            if (mystique->busy) {
+                mystique->busy = 0;
+                mystique->blitter_complete_refcount++;
+            }
+            return;
     }
 
     while (size >= 16) {
@@ -4350,7 +4417,9 @@ blit_iload_iload_high(mystique_t *mystique, uint32_t data, int size)
                     break;
 
                 default:
-                    fatal("ILOAD_SCALE_HIGH RSTR/RPL BUYUV pwidth %08x\n", mystique->maccess_running & MACCESS_PWIDTH_MASK);
+                    mystique_unimpl("ILOAD_SCALE_HIGH RSTR/RPL BUYUV pwidth %08x\n", mystique->maccess_running & MACCESS_PWIDTH_MASK);
+                    size = 0;
+                    break;
             }
         }
 
@@ -4413,8 +4482,12 @@ blit_iload_iload_highv(mystique_t *mystique, uint32_t data, UNUSED(int size))
             break;
 
         default:
-            fatal("blit_iload_iload_highv bltmod %08x\n", mystique->dwgreg.dwgctrl_running & DWGCTRL_BLTMOD_MASK);
-            break;
+            mystique_unimpl("blit_iload_iload_highv bltmod %08x\n", mystique->dwgreg.dwgctrl_running & DWGCTRL_BLTMOD_MASK);
+            if (mystique->busy) {
+                mystique->busy = 0;
+                mystique->blitter_complete_refcount++;
+            }
+            return;
     }
 }
 
@@ -4439,7 +4512,12 @@ blit_iload_write(mystique_t *mystique, uint32_t data, int size)
             break;
 
         default:
-            fatal("blit_iload_write: bad opcode %08x\n", mystique->dwgreg.dwgctrl_running);
+            mystique_unimpl("blit_iload_write: bad opcode %08x\n", mystique->dwgreg.dwgctrl_running);
+            if (mystique->busy) {
+                mystique->busy = 0;
+                mystique->blitter_complete_refcount++;
+            }
+            break;
     }
 }
 
@@ -4579,7 +4657,8 @@ blit_line(mystique_t *mystique, int closed, int autoline)
                             break;
 
                         default:
-                            fatal("LINE RSTR/RPL PWIDTH %x %08x\n", mystique->maccess_running & MACCESS_PWIDTH_MASK, mystique->dwgreg.dwgctrl_running);
+                            mystique_unimpl("LINE RSTR/RPL PWIDTH %x %08x\n", mystique->maccess_running & MACCESS_PWIDTH_MASK, mystique->dwgreg.dwgctrl_running);
+                            break;
                     }
                 }
 
@@ -4693,7 +4772,8 @@ blit_line(mystique_t *mystique, int closed, int autoline)
                                 break;
 
                             default:
-                                fatal("LINE I/ZI PWIDTH %x %08x\n", mystique->maccess_running & MACCESS_PWIDTH_MASK, mystique->dwgreg.dwgctrl_running);
+                                mystique_unimpl("LINE I/ZI PWIDTH %x %08x\n", mystique->maccess_running & MACCESS_PWIDTH_MASK, mystique->dwgreg.dwgctrl_running);
+                                break;
                         }
                     }
                 }
@@ -4853,7 +4933,8 @@ blit_trap(mystique_t *mystique)
                                 break;
 
                             default:
-                                fatal("TRAP BLK/RPL PWIDTH %x %08x\n", mystique->maccess_running & MACCESS_PWIDTH_MASK, mystique->dwgreg.dwgctrl_running);
+                                mystique_unimpl("TRAP BLK/RPL PWIDTH %x %08x\n", mystique->maccess_running & MACCESS_PWIDTH_MASK, mystique->dwgreg.dwgctrl_running);
+                                break;
                         }
                     }
                     len--;
@@ -4936,7 +5017,8 @@ blit_trap(mystique_t *mystique)
                                 break;
 
                             default:
-                                fatal("TRAP RSTR PWIDTH %x %08x\n", mystique->maccess_running & MACCESS_PWIDTH_MASK, mystique->dwgreg.dwgctrl_running);
+                                mystique_unimpl("TRAP RSTR PWIDTH %x %08x\n", mystique->maccess_running & MACCESS_PWIDTH_MASK, mystique->dwgreg.dwgctrl_running);
+                                break;
                         }
                     }
                     x_l++;
@@ -5041,7 +5123,8 @@ blit_trap(mystique_t *mystique)
                                     break;
 
                                 default:
-                                    fatal("TRAP BLK/RPL PWIDTH %x %08x\n", mystique->maccess_running & MACCESS_PWIDTH_MASK, mystique->dwgreg.dwgctrl_running);
+                                    mystique_unimpl("TRAP BLK/RPL PWIDTH %x %08x\n", mystique->maccess_running & MACCESS_PWIDTH_MASK, mystique->dwgreg.dwgctrl_running);
+                                    break;
                             }
                         }
                     }
@@ -5196,7 +5279,7 @@ static uint16_t texture_texel_fetch(mystique_t *mystique, int *tex_r, int *tex_g
             *atransp = 0;
             break;
         default:
-            fatal("Unknown texture format %i\n", mystique->dwgreg.texctl & TEXCTL_TEXFORMAT_MASK);
+            mystique_unimpl("Unknown texture format %i\n", mystique->dwgreg.texctl & TEXCTL_TEXFORMAT_MASK);
             break;
     }
     return src;
@@ -5499,7 +5582,8 @@ blit_texture_trap(mystique_t *mystique)
                                     break;
 
                                 default:
-                                    fatal("Bad TEXCTL %08x %08x\n", mystique->dwgreg.texctl, mystique->dwgreg.texctl & (TEXCTL_TMODULATE | TEXCTL_STRANS | TEXCTL_ITRANS | TEXCTL_DECALCKEY));
+                                    mystique_unimpl("Bad TEXCTL %08x %08x\n", mystique->dwgreg.texctl, mystique->dwgreg.texctl & (TEXCTL_TMODULATE | TEXCTL_STRANS | TEXCTL_ITRANS | TEXCTL_DECALCKEY));
+                                    goto skip_pixel;
                             }
 
                             if (mystique->type >= MGA_G100 && (mystique->maccess_running & MACCESS_FOGEN))
@@ -5621,7 +5705,8 @@ skip_pixel:
             break;
 
         default:
-            fatal("Unknown atype %03x %08x TEXTURE_TRAP\n", mystique->dwgreg.dwgctrl_running & DWGCTRL_ATYPE_MASK, mystique->dwgreg.dwgctrl_running);
+            mystique_unimpl("Unknown atype %03x %08x TEXTURE_TRAP\n", mystique->dwgreg.dwgctrl_running & DWGCTRL_ATYPE_MASK, mystique->dwgreg.dwgctrl_running);
+            break;
     }
 
     mystique->blitter_complete_refcount++;
@@ -5706,7 +5791,8 @@ blit_bitblt(mystique_t *mystique)
                                         break;
 
                                     default:
-                                        fatal("BITBLT DWGCTRL_ATYPE_BLK unknown MACCESS %i\n", mystique->maccess_running & MACCESS_PWIDTH_MASK);
+                                        mystique_unimpl("BITBLT DWGCTRL_ATYPE_BLK unknown MACCESS %i\n", mystique->maccess_running & MACCESS_PWIDTH_MASK);
+                                        break;
                                 }
                             }
 
@@ -5737,7 +5823,7 @@ blit_bitblt(mystique_t *mystique)
                     break;
 
                 default:
-                    fatal("BITBLT BLK %08x\n", mystique->dwgreg.dwgctrl_running & DWGCTRL_BLTMOD_MASK);
+                    mystique_unimpl("BITBLT BLK %08x\n", mystique->dwgreg.dwgctrl_running & DWGCTRL_BLTMOD_MASK);
                     break;
             }
             break;
@@ -5765,7 +5851,7 @@ blit_bitblt(mystique_t *mystique)
                 /* TODO: This isn't exactly perfect. */
                 case DWGCTRL_BLTMOD_BPLAN:
                     if (mystique->dwgreg.dwgctrl_running & DWGCTRL_PATTERN)
-                        fatal("BITBLT RPL/RSTR BPLAN with pattern\n");
+                        mystique_unimpl("BITBLT RPL/RSTR BPLAN with pattern\n");
 
                     src_addr = mystique->dwgreg.ar[3];
 
@@ -5819,7 +5905,8 @@ blit_bitblt(mystique_t *mystique)
                                         break;
 
                                     default:
-                                        fatal("BITBLT RPL BPLAN PWIDTH %x %08x\n", mystique->maccess_running & MACCESS_PWIDTH_MASK, mystique->dwgreg.dwgctrl_running);
+                                        mystique_unimpl("BITBLT RPL BPLAN PWIDTH %x %08x\n", mystique->maccess_running & MACCESS_PWIDTH_MASK, mystique->dwgreg.dwgctrl_running);
+                                        break;
                                 }
                             }
 
@@ -5851,7 +5938,7 @@ blit_bitblt(mystique_t *mystique)
                 case DWGCTRL_BLTMOD_BMONOLEF:
                 case DWGCTRL_BLTMOD_BMONOWF:
                     if (mystique->dwgreg.dwgctrl_running & DWGCTRL_PATTERN)
-                        fatal("BITBLT RPL/RSTR BMONOLEF with pattern\n");
+                        mystique_unimpl("BITBLT RPL/RSTR BMONOLEF with pattern\n");
 
                     src_addr = mystique->dwgreg.ar[3];
 
@@ -5906,7 +5993,8 @@ blit_bitblt(mystique_t *mystique)
                                         break;
 
                                     default:
-                                        fatal("BITBLT RPL BMONOLEF PWIDTH %x %08x\n", mystique->maccess_running & MACCESS_PWIDTH_MASK, mystique->dwgreg.dwgctrl_running);
+                                        mystique_unimpl("BITBLT RPL BMONOLEF PWIDTH %x %08x\n", mystique->maccess_running & MACCESS_PWIDTH_MASK, mystique->dwgreg.dwgctrl_running);
+                                        break;
                                 }
                             }
 
@@ -6001,7 +6089,8 @@ blit_bitblt(mystique_t *mystique)
                                         break;
 
                                     default:
-                                        fatal("BITBLT RPL BFCOL PWIDTH %x %08x\n", mystique->maccess_running & MACCESS_PWIDTH_MASK, mystique->dwgreg.dwgctrl_running);
+                                        mystique_unimpl("BITBLT RPL BFCOL PWIDTH %x %08x\n", mystique->maccess_running & MACCESS_PWIDTH_MASK, mystique->dwgreg.dwgctrl_running);
+                                        break;
                                 }
                             }
 
@@ -6042,7 +6131,8 @@ blit_bitblt(mystique_t *mystique)
                     break;
 
                 default:
-                    fatal("BITBLT DWGCTRL_ATYPE_RPL unknown BLTMOD %08x %08x\n", mystique->dwgreg.dwgctrl_running & DWGCTRL_BLTMOD_MASK, mystique->dwgreg.dwgctrl_running);
+                    mystique_unimpl("BITBLT DWGCTRL_ATYPE_RPL unknown BLTMOD %08x %08x\n", mystique->dwgreg.dwgctrl_running & DWGCTRL_BLTMOD_MASK, mystique->dwgreg.dwgctrl_running);
+                    break;
             }
             break;
 
@@ -6085,13 +6175,14 @@ blit_iload(mystique_t *mystique)
                     break;
 
                 default:
-                    fatal("ILOAD DWGCTRL_ATYPE_RPL %08x %08x\n", mystique->dwgreg.dwgctrl_running & DWGCTRL_BLTMOD_MASK, mystique->dwgreg.dwgctrl_running);
+                    mystique_unimpl("ILOAD DWGCTRL_ATYPE_RPL %08x %08x\n", mystique->dwgreg.dwgctrl_running & DWGCTRL_BLTMOD_MASK, mystique->dwgreg.dwgctrl_running);
                     break;
             }
             break;
 
         default:
-            fatal("Unknown ILOAD atype %03x %08x\n", mystique->dwgreg.dwgctrl_running & DWGCTRL_ATYPE_MASK, mystique->dwgreg.dwgctrl_running);
+            mystique_unimpl("Unknown ILOAD atype %03x %08x\n", mystique->dwgreg.dwgctrl_running & DWGCTRL_ATYPE_MASK, mystique->dwgreg.dwgctrl_running);
+            break;
     }
 }
 
@@ -6114,7 +6205,8 @@ blit_idump(mystique_t *mystique)
             break;
 
         default:
-            fatal("Unknown IDUMP atype %03x %08x\n", mystique->dwgreg.dwgctrl_running & DWGCTRL_ATYPE_MASK, mystique->dwgreg.dwgctrl_running);
+            mystique_unimpl("Unknown IDUMP atype %03x %08x\n", mystique->dwgreg.dwgctrl_running & DWGCTRL_ATYPE_MASK, mystique->dwgreg.dwgctrl_running);
+            break;
     }
 }
 
@@ -6135,13 +6227,14 @@ blit_iload_scale(mystique_t *mystique)
                     break;
 
                 default:
-                    fatal("ILOAD_SCALE DWGCTRL_ATYPE_RPL %08x %08x\n", mystique->dwgreg.dwgctrl_running & DWGCTRL_BLTMOD_MASK, mystique->dwgreg.dwgctrl_running);
+                    mystique_unimpl("ILOAD_SCALE DWGCTRL_ATYPE_RPL %08x %08x\n", mystique->dwgreg.dwgctrl_running & DWGCTRL_BLTMOD_MASK, mystique->dwgreg.dwgctrl_running);
                     break;
             }
             break;
 
         default:
-            fatal("Unknown ILOAD_SCALE atype %03x %08x\n", mystique->dwgreg.dwgctrl_running & DWGCTRL_ATYPE_MASK, mystique->dwgreg.dwgctrl_running);
+            mystique_unimpl("Unknown ILOAD_SCALE atype %03x %08x\n", mystique->dwgreg.dwgctrl_running & DWGCTRL_ATYPE_MASK, mystique->dwgreg.dwgctrl_running);
+            break;
     }
 }
 
@@ -6163,13 +6256,14 @@ blit_iload_high(mystique_t *mystique)
                     break;
 
                 default:
-                    fatal("ILOAD_HIGH DWGCTRL_ATYPE_RPL %08x %08x\n", mystique->dwgreg.dwgctrl_running & DWGCTRL_BLTMOD_MASK, mystique->dwgreg.dwgctrl_running);
+                    mystique_unimpl("ILOAD_HIGH DWGCTRL_ATYPE_RPL %08x %08x\n", mystique->dwgreg.dwgctrl_running & DWGCTRL_BLTMOD_MASK, mystique->dwgreg.dwgctrl_running);
                     break;
             }
             break;
 
         default:
-            fatal("Unknown ILOAD_HIGH atype %03x %08x\n", mystique->dwgreg.dwgctrl_running & DWGCTRL_ATYPE_MASK, mystique->dwgreg.dwgctrl_running);
+            mystique_unimpl("Unknown ILOAD_HIGH atype %03x %08x\n", mystique->dwgreg.dwgctrl_running & DWGCTRL_ATYPE_MASK, mystique->dwgreg.dwgctrl_running);
+            break;
     }
 }
 
@@ -6194,13 +6288,14 @@ blit_iload_highv(mystique_t *mystique)
                     break;
 
                 default:
-                    fatal("ILOAD_HIGHV DWGCTRL_ATYPE_RPL %08x %08x\n", mystique->dwgreg.dwgctrl_running & DWGCTRL_BLTMOD_MASK, mystique->dwgreg.dwgctrl_running);
+                    mystique_unimpl("ILOAD_HIGHV DWGCTRL_ATYPE_RPL %08x %08x\n", mystique->dwgreg.dwgctrl_running & DWGCTRL_BLTMOD_MASK, mystique->dwgreg.dwgctrl_running);
                     break;
             }
             break;
 
         default:
-            fatal("Unknown ILOAD_HIGHV atype %03x %08x\n", mystique->dwgreg.dwgctrl_running & DWGCTRL_ATYPE_MASK, mystique->dwgreg.dwgctrl_running);
+            mystique_unimpl("Unknown ILOAD_HIGHV atype %03x %08x\n", mystique->dwgreg.dwgctrl_running & DWGCTRL_ATYPE_MASK, mystique->dwgreg.dwgctrl_running);
+            break;
     }
 }
 
@@ -6276,7 +6371,7 @@ mystique_start_blit(mystique_t *mystique)
             break;
 
         default:
-            fatal("mystique_start_blit: unknown blit %08x\n", mystique->dwgreg.dwgctrl_running & DWGCTRL_OPCODE_MASK);
+            mystique_unimpl("mystique_start_blit: unknown blit %08x\n", mystique->dwgreg.dwgctrl_running & DWGCTRL_OPCODE_MASK);
             break;
     }
 
