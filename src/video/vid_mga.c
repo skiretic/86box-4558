@@ -5230,7 +5230,7 @@ persp_correct(mystique_t* mystique, int* s, int* t, int* q, double* s_frac, doub
     t_d *= 1. / q_d;
 
     *s_frac = fabs(modf(s_d, &throwaway1));
-    *t_frac = fabs(modf(s_d, &throwaway2));
+    *t_frac = fabs(modf(t_d, &throwaway2));
 
     (void)throwaway1;
     (void)throwaway2;
