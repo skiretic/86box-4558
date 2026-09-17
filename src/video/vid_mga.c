@@ -459,7 +459,7 @@ typedef struct mystique_t {
 
     uint8_t pci_slot, irq_state, pad, pad0;
 
-    uint8_t pci_regs[256], crtcext_regs[6],
+    uint8_t pci_regs[256], crtcext_regs[7],
         xreg_regs[256], dmamap[16];
 
     int vram_size, crtcext_idx, xreg_idx, xzoomctrl;
@@ -761,7 +761,9 @@ mystique_out(uint16_t addr, uint8_t val, void *priv)
         case 0x3df:
             if (mystique->crtcext_idx == 1)
                 svga->dpms = !!(val & 0x30);
-            if (mystique->crtcext_idx < 6)
+            /* CRTCEXT6 exists on the G100 only; on the earlier parts index 6 is not a
+               register and the write is dropped. */
+            if (mystique->crtcext_idx < ((mystique->type >= MGA_G100) ? 7 : 6))
                 mystique->crtcext_regs[mystique->crtcext_idx] = val;
 
             if ((mystique->type >= MGA_1064SG) && (mystique->crtcext_idx == 0) &&
@@ -870,7 +872,7 @@ mystique_in(uint16_t addr, void *priv)
             break;
 
         case 0x3df:
-            if (mystique->crtcext_idx < 6)
+            if (mystique->crtcext_idx < ((mystique->type >= MGA_G100) ? 7 : 6))
                 temp = mystique->crtcext_regs[mystique->crtcext_idx];
             break;
 
@@ -6796,9 +6798,10 @@ mystique_init(const device_t *info)
     mystique->type   = info->local;
     mystique->is_agp = !!(info->flags & DEVICE_AGP);
 
-    if (mystique->type == MGA_G100)
-        mystique->pll_ref_clock = 27000000.0f;
-    else
+    if (mystique->type == MGA_G100) {
+        mystique->pll_ref_clock   = 27000000.0f;
+        mystique->crtcext_regs[6] = 0x70;
+    } else
         mystique->pll_ref_clock = 14318181.0f;
 
     if (mystique->type == MGA_2064W)
