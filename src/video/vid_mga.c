@@ -6368,10 +6368,14 @@ mystique_start_blit(mystique_t *mystique)
 
         case DWGCTRL_OPCODE_ILOAD_FILTER:
             /* TODO: Actually implement this. */
+            mystique->blitter_complete_refcount++;
             break;
 
         default:
             mystique_unimpl("mystique_start_blit: unknown blit %08x\n", mystique->dwgreg.dwgctrl_running & DWGCTRL_OPCODE_MASK);
+            /* The go write already counted a submission; complete it here or
+               STATUS<dwgengsts> reads busy until the next REG_RST. */
+            mystique->blitter_complete_refcount++;
             break;
     }
 
