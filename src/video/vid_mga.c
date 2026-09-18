@@ -2371,6 +2371,18 @@ mystique_ctrl_read_l(uint32_t addr, void *priv)
     if ((addr & 0x3fff) < 0x1c00)
         return mystique_iload_read_l(addr, priv);
 
+    /* run_dma advances these on the FIFO thread. Four byte reads can straddle a carry and
+       return a pointer ahead of the channel; the hardware returns the register in one read. */
+    switch (addr & 0x3ffc) {
+        case REG_PRIMADDRESS:
+            return atomic_load(&((mystique_t *) priv)->dma.primaddress);
+        case REG_SECADDRESS:
+            return atomic_load(&((mystique_t *) priv)->dma.secaddress);
+
+        default:
+            break;
+    }
+
     ret = mystique_ctrl_read_b(addr, priv);
     ret |= mystique_ctrl_read_b(addr + 1, priv) << 8;
     ret |= mystique_ctrl_read_b(addr + 2, priv) << 16;
