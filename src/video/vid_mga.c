@@ -7113,6 +7113,31 @@ mystique_force_redraw(void *priv)
     mystique->svga.fullchange = changeframecount;
 }
 
+static void
+mystique_reset(void *priv)
+{
+    mystique_t *mystique = (mystique_t *) priv;
+    svga_t     *svga     = &mystique->svga;
+
+    /* CRTCEXT0-5 reset to 00h and CRTCEXT6 to 70h, so the part comes out of a reset in
+       VGA-compatible mode (mgamode is CRTCEXT3<7>) with the aperture page at 0. Nothing
+       else clears these, and svga->dpms has no other writer, so without this the guest
+       resets into whatever mode the previous session left behind. */
+    memset(mystique->crtcext_regs, 0x00, sizeof(mystique->crtcext_regs));
+    if (mystique->type >= MGA_G100)
+        mystique->crtcext_regs[6] = 0x70;
+    mystique->crtcext_idx = 0;
+
+    svga->read_bank  = 0;
+    svga->write_bank = 0;
+    svga->dpms       = 0;
+
+    mystique->ma_latch_old = 0;
+
+    svga_recalctimings(svga);
+    svga->fullchange = changeframecount;
+}
+
 static const device_config_t mystique_config[] = {
   // clang-format off
     {
@@ -7189,7 +7214,7 @@ const device_t millennium_device = {
     .local         = MGA_2064W,
     .init          = mystique_init,
     .close         = mystique_close,
-    .reset         = NULL,
+    .reset         = mystique_reset,
     .available     = millennium_available,
     .speed_changed = mystique_speed_changed,
     .force_redraw  = mystique_force_redraw,
@@ -7203,7 +7228,7 @@ const device_t mystique_device = {
     .local         = MGA_1064SG,
     .init          = mystique_init,
     .close         = mystique_close,
-    .reset         = NULL,
+    .reset         = mystique_reset,
     .available     = mystique_available,
     .speed_changed = mystique_speed_changed,
     .force_redraw  = mystique_force_redraw,
@@ -7217,7 +7242,7 @@ const device_t mystique_220_device = {
     .local         = MGA_1164SG,
     .init          = mystique_init,
     .close         = mystique_close,
-    .reset         = NULL,
+    .reset         = mystique_reset,
     .available     = mystique_220_available,
     .speed_changed = mystique_speed_changed,
     .force_redraw  = mystique_force_redraw,
@@ -7231,7 +7256,7 @@ const device_t millennium_ii_device = {
     .local         = MGA_2164W,
     .init          = mystique_init,
     .close         = mystique_close,
-    .reset         = NULL,
+    .reset         = mystique_reset,
     .available     = millennium_ii_available,
     .speed_changed = mystique_speed_changed,
     .force_redraw  = mystique_force_redraw,
@@ -7245,7 +7270,7 @@ const device_t millennium_ii_agp_device = {
     .local         = MGA_2164W,
     .init          = mystique_init,
     .close         = mystique_close,
-    .reset         = NULL,
+    .reset         = mystique_reset,
     .available     = millennium_ii_agp_available,
     .speed_changed = mystique_speed_changed,
     .force_redraw  = mystique_force_redraw,
@@ -7264,7 +7289,7 @@ const device_t productiva_g100_device = {
     .local         = MGA_G100,
     .init          = mystique_init,
     .close         = mystique_close,
-    .reset         = NULL,
+    .reset         = mystique_reset,
     .available     = matrox_g100_available,
     .speed_changed = mystique_speed_changed,
     .force_redraw  = mystique_force_redraw,
