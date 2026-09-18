@@ -7291,8 +7291,7 @@ const device_t productiva_g100_device = {
     .internal_name = "productiva_g100",
     /* The emulated part is the MGA-G100-PCI: it reports device ID 1001h and loads
        the PCI board's VBIOS, and the AGP-only registers at F0h-FBh do not apply to
-       it. On the AGP bus its INTA is never serviced, so the driver's soft trap
-       never completes. */
+       it. */
     .flags         = DEVICE_PCI,
     .local         = MGA_G100,
     .init          = mystique_init,
