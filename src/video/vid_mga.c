@@ -767,7 +767,8 @@ mystique_out(uint16_t addr, uint8_t val, void *priv)
             break;
 
         case 0x3de:
-            mystique->crtcext_idx = val;
+            /* The index is crtcextx<2:0>; bits 7:3 are reserved, so 09h selects CRTCEXT1. */
+            mystique->crtcext_idx = val & 0x07;
             break;
         case 0x3df:
             if (mystique->crtcext_idx == 1)
@@ -883,8 +884,11 @@ mystique_in(uint16_t addr, void *priv)
             break;
 
         case 0x3df:
+            /* A reserved index reads 0. */
             if (mystique->crtcext_idx < ((mystique->type >= MGA_G100) ? 7 : 6))
                 temp = mystique->crtcext_regs[mystique->crtcext_idx];
+            else
+                temp = 0;
             break;
 
         default:
