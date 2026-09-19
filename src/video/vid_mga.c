@@ -487,6 +487,7 @@ typedef struct mystique_t {
 
     atomic_uint status;
     atomic_bool softrap_status_read;
+    int         status_read_l;
 
     uint64_t blitter_time, status_time;
 
@@ -1614,7 +1615,8 @@ mystique_ctrl_read_b(uint32_t addr, void *priv)
                 break;
 
             case REG_STATUS:
-                mystique_softrap_apply(mystique);
+                if (!mystique->status_read_l)
+                    mystique_softrap_apply(mystique);
                 ret = mystique->status & 0xff;
                 if (svga->cgastat & 8)
                     ret |= REG_STATUS_VSYNCSTS;
@@ -1629,7 +1631,8 @@ mystique_ctrl_read_b(uint32_t addr, void *priv)
                 ret = (mystique->status >> 8) & 0xff;
                 break;
             case REG_STATUS + 2:
-                mystique_softrap_apply(mystique);
+                if (!mystique->status_read_l)
+                    mystique_softrap_apply(mystique);
                 ret = (mystique->status >> 16) & 0xff;
                 if (mystique->busy || ((mystique->blitter_submit_refcount + mystique->blitter_submit_dma_refcount) != mystique->blitter_complete_refcount) || !FIFO_EMPTY
                 || mystique->dma.state != MGA_DMA_STATE_IDLE || mystique->softrap_pending || mystique->endprdmasts_pending)
@@ -2386,6 +2389,21 @@ mystique_ctrl_read_l(uint32_t addr, void *priv)
         case REG_SECADDRESS:
             return atomic_load(&((mystique_t *) priv)->dma.secaddress);
 
+        case REG_STATUS: {
+            /* A trap applied between the byte reads would show endprdmasts without
+               softrapen; the chip sets both at once and returns them in one read. */
+            mystique_t *mystique = (mystique_t *) priv;
+
+            mystique_softrap_apply(mystique);
+            mystique->status_read_l = 1;
+            ret = mystique_ctrl_read_b(addr, priv);
+            ret |= mystique_ctrl_read_b(addr + 1, priv) << 8;
+            ret |= mystique_ctrl_read_b(addr + 2, priv) << 16;
+            ret |= mystique_ctrl_read_b(addr + 3, priv) << 24;
+            mystique->status_read_l = 0;
+            return ret;
+        }
+
         default:
             break;
     }
@@ -2655,9 +2673,11 @@ mystique_accel_ctrl_write_l(uint32_t addr, uint32_t val, void *priv)
             mystique->dma.state           = MGA_DMA_STATE_IDLE;
             mystique->dma.pri_state       = 0;
             mystique->dma.words_expected  = 0;
-            mystique->endprdmasts_pending = 1;
+            /* Trap first: mystique_softrap_apply() takes the end status first, so a reader
+               that sees this trap's endprdmasts also sees its softrapen. */
             mystique->softrap_pending_val = val;
             mystique->softrap_pending     += 1;
+            mystique->endprdmasts_pending = 1;
             break;
 
         case REG_ALPHACTRL:
