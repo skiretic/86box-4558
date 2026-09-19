@@ -6985,6 +6985,12 @@ mystique_init(const device_t *info)
     mem_mapping_disable(&mystique->bios_rom.mapping);
 
     mystique->vram_size   = device_get_config_int("memory");
+    /* The G100 BIOS image is one board's firmware: its PInS block fixes the
+       memory size at 8 MB and suppresses the BIOS memory probe, so the driver
+       uses 8 MB whatever is fitted. Older configuration files may still hold
+       another size. */
+    if (mystique->type == MGA_G100)
+        mystique->vram_size = 8;
     mystique->vram_mask   = (mystique->vram_size << 20) - 1;
     mystique->vram_mask_w = mystique->vram_mask >> 1;
     mystique->vram_mask_l = mystique->vram_mask >> 2;
@@ -7262,10 +7268,7 @@ static const device_config_t g100_config[] = {
         .file_filter    = NULL,
         .spinner        = { 0 },
         .selection      = {
-            { .description =  "2 MB", .value =  2 },
-            { .description =  "4 MB", .value =  4 },
             { .description =  "8 MB", .value =  8 },
-            { .description = "16 MB", .value = 16 },
             { .description = ""                   }
         },
         .bios           = { { 0 } }
