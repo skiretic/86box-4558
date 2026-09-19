@@ -7346,10 +7346,7 @@ const device_t millennium_ii_agp_device = {
 const device_t productiva_g100_device = {
     .name          = "Matrox Productiva G100",
     .internal_name = "productiva_g100",
-    /* The emulated part is the MGA-G100-PCI: it reports device ID 1001h and loads
-       the PCI board's VBIOS, and the AGP-only registers at F0h-FBh do not apply to
-       it. */
-    .flags         = DEVICE_PCI,
+    .flags         = DEVICE_AGP,
     .local         = MGA_G100,
     .init          = mystique_init,
     .close         = mystique_close,
