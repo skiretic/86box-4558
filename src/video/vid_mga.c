@@ -683,6 +683,7 @@ static video_timings_t timing_matrox_mystique_agp   = { .type = VIDEO_AGP, .writ
 
 static void mystique_start_blit(mystique_t *mystique);
 static void mystique_update_irqs(mystique_t *mystique);
+static void mystique_softrap_apply(mystique_t *mystique);
 
 static void wake_fifo_thread(mystique_t *mystique);
 static void wait_fifo_idle(mystique_t *mystique);
@@ -1613,6 +1614,7 @@ mystique_ctrl_read_b(uint32_t addr, void *priv)
                 break;
 
             case REG_STATUS:
+                mystique_softrap_apply(mystique);
                 ret = mystique->status & 0xff;
                 if (svga->cgastat & 8)
                     ret |= REG_STATUS_VSYNCSTS;
@@ -1627,6 +1629,7 @@ mystique_ctrl_read_b(uint32_t addr, void *priv)
                 ret = (mystique->status >> 8) & 0xff;
                 break;
             case REG_STATUS + 2:
+                mystique_softrap_apply(mystique);
                 ret = (mystique->status >> 16) & 0xff;
                 if (mystique->busy || ((mystique->blitter_submit_refcount + mystique->blitter_submit_dma_refcount) != mystique->blitter_complete_refcount) || !FIFO_EMPTY
                 || mystique->dma.state != MGA_DMA_STATE_IDLE || mystique->softrap_pending || mystique->endprdmasts_pending)
@@ -2184,6 +2187,10 @@ mystique_ctrl_write_b(uint32_t addr, uint8_t val, void *priv)
     switch (addr & 0x3fff) {
         case REG_ICLEAR:
             if (val & ICLEAR_SOFTRAPICLR) {
+                /* A trap executed before this write is set on the chip and cleared here;
+                   an acknowledged trap must not read back as pending. */
+                mystique_softrap_apply(mystique);
+                mystique->softrap_status_read = 1;
                 //pclog("softrapiclr\n");
                 mystique->status &= ~STATUS_SOFTRAPEN;
                 mystique_update_irqs(mystique);
@@ -2723,6 +2730,15 @@ mystique_ctrl_write_l(uint32_t addr, uint32_t val, void *priv)
         case REG_PRIMEND:
             thread_wait_mutex(mystique->dma.lock);
             mystique->dma.primend = val;
+            /* A trap the FIFO thread has run but the guest has not seen yet: the chip would
+               have interrupted the CPU before this write, so it reached the chip ahead of the
+               trap and only extends the list. Restarting here would run the entry after the
+               trap before the handler sees the channel stopped at it. */
+            if (mystique->softrap_pending) {
+                thread_release_mutex(mystique->dma.lock);
+                mystique_softrap_apply(mystique);
+                break;
+            }
             //pclog("PRIMADDRESS = 0x%08X, PRIMEND = 0x%08X\n", mystique->dma.primaddress, mystique->dma.primend);
             if (mystique->dma.state == MGA_DMA_STATE_IDLE && (mystique->dma.primaddress & DMA_ADDR_MASK) != (mystique->dma.primend & DMA_ADDR_MASK)) {
                 mystique->endprdmasts_pending = 0;
@@ -3271,6 +3287,27 @@ wait_fifo_idle(mystique_t *mystique)
   callback. End-of-DMA status is also deferred here to prevent races between
   SOFTRAP IRQs and code reading the status register. Croc will get into an IRQ
   loop and triple fault if the ENDPRDMASTS flag is seen before the IRQ is taken*/
+/* The chip sets softrapen and endprdmasts when the trap executes, so a STATUS read also
+   applies what is pending: a guest that still sees the channel running extends the list
+   with PRIMEND, which restarts the stopped channel on the entry after the trap. softrapen
+   is one latch bit: traps that arrive before one ICLEAR leave one pending bit.
+   Emulation thread only. */
+static void
+mystique_softrap_apply(mystique_t *mystique)
+{
+    if (mystique->endprdmasts_pending) {
+        mystique->endprdmasts_pending = 0;
+        mystique->status |= STATUS_ENDPRDMASTS;
+    }
+    if (atomic_exchange(&mystique->softrap_pending, 0)) {
+        mystique->dma.secaddress = mystique->softrap_pending_val;
+        mystique->status |= STATUS_SOFTRAPEN;
+        mystique->softrap_status_read = 0;
+        //pclog("softrapen\n");
+        mystique_update_irqs(mystique);
+    }
+}
+
 static void
 mystique_softrap_pending_timer(void *priv)
 {
@@ -3278,19 +3315,7 @@ mystique_softrap_pending_timer(void *priv)
 
     timer_advance_u64(&mystique->softrap_pending_timer, TIMER_USEC * 100);
 
-    if (mystique->endprdmasts_pending) {
-        mystique->endprdmasts_pending = 0;
-        mystique->status |= STATUS_ENDPRDMASTS;
-    }
-    if (mystique->softrap_pending) {
-        mystique->dma.secaddress = mystique->softrap_pending_val;
-        mystique->status |= STATUS_SOFTRAPEN;
-        mystique->softrap_status_read = 0;
-        //pclog("softrapen\n");
-        mystique_update_irqs(mystique);
-        mystique->softrap_pending--;
-    }
-
+    mystique_softrap_apply(mystique);
 }
 
 static void
