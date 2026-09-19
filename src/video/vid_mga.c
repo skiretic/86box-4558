@@ -377,6 +377,8 @@
 
 #define IEN_SOFTRAPEN                 (1 << 0)
 
+#define ALPHACTRL_ASTIPPLE            (1 << 11)
+
 #define TEXCTL_TEXFORMAT_MASK         (7 << 0)
 #define TEXCTL_TEXFORMAT_TW4          (0 << 0)
 #define TEXCTL_TEXFORMAT_TW8          (1 << 0)
@@ -5595,23 +5597,24 @@ blit_texture_trap(mystique_t *mystique)
                             {
                                 uint8_t alpha_sel = (mystique->dwgreg.alphactrl >> 24) & 3;
 
-                                switch (alpha_sel)
-                                {
-                                    case 0x0: /* alpha from texture */
-                                        final_a = tex_a;
-                                        break;
-                                    default:
-                                    case 0x1: /* interpolated alpha */
-                                        if ((mystique->dwgreg.alphactrl & (1 << 11)))
-                                            final_a = i_a;
-                                        break;
-                                    case 0x2: /* modulated alpha */
-                                        if (!(mystique->dwgreg.alphactrl & (1 << 11)))
+                                /*Alpha reaches a pixel only through the alpha
+                                  stipple, which astipple enables; alphasel then
+                                  says where the value comes from. With astipple
+                                  clear the pages give alpha no effect at all.*/
+                                if (mystique->dwgreg.alphactrl & ALPHACTRL_ASTIPPLE)
+                                    switch (alpha_sel)
+                                    {
+                                        case 0x0: /* alpha from texture */
                                             final_a = tex_a;
-                                        else
+                                            break;
+                                        default:
+                                        case 0x1: /* interpolated alpha */
+                                            final_a = i_a;
+                                            break;
+                                        case 0x2: /* modulated alpha */
                                             final_a = ((i_a * tex_a) >> 8) & 0xFF;
-                                        break;
-                                }
+                                            break;
+                                    }
                             }
 
                             switch (mystique->dwgreg.texctl & (TEXCTL_TMODULATE | TEXCTL_STRANS | TEXCTL_ITRANS | TEXCTL_DECALCKEY)) {
