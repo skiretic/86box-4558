@@ -486,7 +486,7 @@ typedef struct mystique_t {
         softrap_pending_val;
 
     atomic_uint status;
-    atomic_bool softrap_status_read;
+    atomic_bool softrap_status_read, softrap_held;
     int         status_read_l;
 
     uint64_t blitter_time, status_time;
@@ -2196,6 +2196,16 @@ mystique_ctrl_write_b(uint32_t addr, uint8_t val, void *priv)
                 mystique->softrap_status_read = 1;
                 //pclog("softrapiclr\n");
                 mystique->status &= ~STATUS_SOFTRAPEN;
+                /* The trap's end status lasts only while the trap is pending. Stopped short of
+                   PRIMEND, the channel has not finished its list; the PowerDesk HAL takes
+                   endprdmasts as "flip done" and would draw into a buffer whose flip the
+                   handler has deferred to vsync. */
+                thread_wait_mutex(mystique->dma.lock);
+                if (mystique->dma.state == MGA_DMA_STATE_IDLE && (mystique->dma.primaddress & DMA_ADDR_MASK) != (mystique->dma.primend & DMA_ADDR_MASK)) {
+                    mystique->softrap_held = 1;
+                    mystique->status &= ~STATUS_ENDPRDMASTS;
+                }
+                thread_release_mutex(mystique->dma.lock);
                 mystique_update_irqs(mystique);
             }
             if (val & ICLEAR_VLINEICLR) {
@@ -2276,6 +2286,7 @@ mystique_ctrl_write_b(uint32_t addr, uint8_t val, void *priv)
             mystique->blitter_complete_refcount   = 0;
             mystique->dwgreg.iload_rem_count      = 0;
             mystique->status                      = STATUS_ENDPRDMASTS;
+            mystique->softrap_held                = 0;
             thread_wait_mutex(mystique->dma.lock);
             mystique->dma.pri_state               = 0;
             mystique->dma.sec_state               = 0;
@@ -2760,6 +2771,12 @@ mystique_ctrl_write_l(uint32_t addr, uint32_t val, void *priv)
                 break;
             }
             //pclog("PRIMADDRESS = 0x%08X, PRIMEND = 0x%08X\n", mystique->dma.primaddress, mystique->dma.primend);
+            /* Held at an acknowledged trap and restarted on an empty list: the channel is at its end. */
+            if (mystique->softrap_held) {
+                mystique->softrap_held = 0;
+                if (mystique->dma.state == MGA_DMA_STATE_IDLE && (mystique->dma.primaddress & DMA_ADDR_MASK) == (mystique->dma.primend & DMA_ADDR_MASK))
+                    mystique->status |= STATUS_ENDPRDMASTS;
+            }
             if (mystique->dma.state == MGA_DMA_STATE_IDLE && (mystique->dma.primaddress & DMA_ADDR_MASK) != (mystique->dma.primend & DMA_ADDR_MASK)) {
                 mystique->endprdmasts_pending = 0;
                 mystique->status &= ~STATUS_ENDPRDMASTS;
@@ -3013,7 +3030,7 @@ run_dma(mystique_t *mystique)
     }
 
     if (mystique->dma.state == MGA_DMA_STATE_IDLE) {
-        if (!(mystique->status & STATUS_ENDPRDMASTS))
+        if (!(mystique->status & STATUS_ENDPRDMASTS) && !mystique->softrap_held)
         {
             /* Force this to appear. */
             mystique->endprdmasts_pending = 1;
