@@ -3769,7 +3769,7 @@ blit_iload_iload(mystique_t *mystique, uint32_t data, int size)
             y1 = (298 * ((int) ((data >> 16) & 0xff) - 16)) >> 8;
             v  = ((data >> 24) & 0xff) - 0x80;
 
-            dR = (309 * v) >> 8;
+            dR = (409 * v) >> 8;
             dG = (100 * u + 208 * v) >> 8;
             dB = (516 * u) >> 8;
 
@@ -4276,7 +4276,7 @@ blit_iload_iload_scale(mystique_t *mystique, uint32_t data, int size)
             y1 = (298 * ((int) ((data >> 16) & 0xff) - 16)) >> 8;
             v  = ((data >> 24) & 0xff) - 0x80;
 
-            dR = (309 * v) >> 8;
+            dR = (409 * v) >> 8;
             dG = (100 * u + 208 * v) >> 8;
             dB = (516 * u) >> 8;
 
@@ -4429,7 +4429,7 @@ blit_iload_iload_high(mystique_t *mystique, uint32_t data, int size)
             y1 = (298 * ((int) ((data >> 16) & 0xff) - 16)) >> 8;
             v  = ((data >> 24) & 0xff) - 0x80;
 
-            dR = (309 * v) >> 8;
+            dR = (409 * v) >> 8;
             dG = (100 * u + 208 * v) >> 8;
             dB = (516 * u) >> 8;
 
