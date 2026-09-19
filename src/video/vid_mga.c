@@ -5267,6 +5267,9 @@ static uint16_t texture_texel_fetch(mystique_t *mystique, int *tex_r, int *tex_g
     const unsigned int palsel    = mystique->dwgreg.texctl & TEXCTL_PALSEL_MASK;
     svga_t*            svga      = &mystique->svga;
     uint16_t           src       = 0x0;
+    /* Formats without an alpha field: (alpha & tamask) == takey only has a
+       defined result with tamask = 0, where it is (takey == 0) for any texel. */
+    const int          atransp_noalpha = !mystique->dwgreg.ta_mask && !mystique->dwgreg.ta_key;
 
     int atransp_dummy = 0;
 
@@ -5299,14 +5302,14 @@ static uint16_t texture_texel_fetch(mystique_t *mystique, int *tex_r, int *tex_g
             *tex_r   = mystique->lut[src | palsel].r;
             *tex_g   = mystique->lut[src | palsel].g;
             *tex_b   = mystique->lut[src | palsel].b;
-            *atransp = 0;
+            *atransp = atransp_noalpha;
             break;
         case TEXCTL_TEXFORMAT_TW8:
             src      = svga->vram[(mystique->dwgreg.texorg + (t * tex_pitch) + s) & mystique->vram_mask];
             *tex_r   = mystique->lut[src].r;
             *tex_g   = mystique->lut[src].g;
             *tex_b   = mystique->lut[src].b;
-            *atransp = 0;
+            *atransp = atransp_noalpha;
             break;
         case TEXCTL_TEXFORMAT_TW15:
             src    = *(uint16_t*)((&svga->vram[(mystique->dwgreg.texorg + ((t * tex_pitch) + s) * 2) & mystique->vram_mask]));
@@ -5337,7 +5340,7 @@ static uint16_t texture_texel_fetch(mystique_t *mystique, int *tex_r, int *tex_g
             *tex_r   = (src >> 11) << 3;
             *tex_g   = ((src >> 5) & 0x3f) << 2;
             *tex_b   = (src & 0x1f) << 3;
-            *atransp = 0;
+            *atransp = atransp_noalpha;
             break;
         default:
             mystique_unimpl("Unknown texture format %i\n", mystique->dwgreg.texctl & TEXCTL_TEXFORMAT_MASK);
