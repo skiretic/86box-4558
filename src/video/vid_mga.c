@@ -6357,13 +6357,8 @@ blit_iload_highv(mystique_t *mystique)
 static void
 mystique_start_blit(mystique_t *mystique)
 {
-    svga_t *svga = &mystique->svga;
     uint64_t start_time = plat_timer_read();
     uint64_t end_time;
-
-    /*Make sure we don't get any artifacts.*/
-    svga->chain2_write = 0;
-    svga->chain2_read = 0;
 
     mystique->dwgreg.dwgctrl_running = mystique->dwgreg.dwgctrl;
     mystique->maccess_running        = mystique->maccess;
