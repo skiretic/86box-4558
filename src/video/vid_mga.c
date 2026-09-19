@@ -427,6 +427,36 @@ enum {
     MGA_G100,  /*Productiva G100*/
 };
 
+/*Legal DWGCTL opcodes per chip; bit n = opcode n. Opcodes 5 and 11 are
+  reserved everywhere. IDUMP and FBITBLT are reserved on the G100, FBITBLT on
+  the 1064SG, and the texture trap, ILOAD_HIGH and ILOAD_HIGHV on the 2064W.*/
+#define MGA_OPS_ALL     0xf7df
+#define MGA_OPS_2064W   0xb71f
+#define MGA_OPS_1064SG  0xe7df
+#define MGA_OPS_G100    0xe3df
+
+/*What each chip has. The 1164SG has no specification in the corpus; it is
+  given the 1064SG's row, which is an assumption, not a documented fact.*/
+typedef struct mga_chip_t {
+    uint8_t  vga_page_bits; /*CRTCEXT4 bank page field width*/
+    uint8_t  ydst_bits;
+    uint8_t  has_colorkey;  /*color-keyed BITBLT and ILOAD*/
+    uint8_t  has_texfilter;
+    uint8_t  has_busmaster; /*primary/secondary DMA channels and the soft trap*/
+    uint16_t opcodes;
+} mga_chip_t;
+
+#define MGA_YDST_MASK(m) ((1u << mga_chip[(m)->type].ydst_bits) - 1u)
+
+static const mga_chip_t mga_chip[] = {
+  /* page, ydst, ckey, tfilt, busm, opcodes */
+    {  7,   22,    0,    0,    0, MGA_OPS_2064W  }, /*2064W*/
+    {  7,   22,    1,    0,    1, MGA_OPS_1064SG }, /*1064SG*/
+    {  7,   22,    1,    0,    1, MGA_OPS_1064SG }, /*1164SG*/
+    {  8,   23,    1,    0,    1, MGA_OPS_ALL    }, /*2164W*/
+    {  7,   23,    1,    1,    1, MGA_OPS_G100   }  /*G100*/
+};
+
 enum {
     FIFO_INVALID          = (0x00 << 24),
     FIFO_WRITE_CTRL_BYTE  = (0x01 << 24),
@@ -809,25 +839,14 @@ mystique_out(uint16_t addr, uint8_t val, void *priv)
             }
 
             if (mystique->crtcext_idx == 4) {
-                if (svga->gdcreg[6] & 0xc) {
-                    /*64k banks*/
-                    if (mystique->type >= MGA_2164W) {
-                        svga->read_bank  = val << 16;
-                        svga->write_bank = val << 16;
-                    } else {
-                        svga->read_bank  = (val & 0x7f) << 16;
-                        svga->write_bank = (val & 0x7f) << 16;
-                    }
-                } else {
-                    /*128k banks*/
-                    if (mystique->type >= MGA_2164W) {
-                        svga->read_bank  = (val & 0xfe) << 16;
-                        svga->write_bank = (val & 0xfe) << 16;
-                    } else {
-                        svga->read_bank  = (val & 0x7e) << 16;
-                        svga->write_bank = (val & 0x7e) << 16;
-                    }
-                }
+                uint8_t page = val & ((1 << mga_chip[mystique->type].vga_page_bits) - 1);
+
+                /*128k banks take the page field one bit further up.*/
+                if (!(svga->gdcreg[6] & 0xc))
+                    page &= ~1;
+
+                svga->read_bank  = page << 16;
+                svga->write_bank = page << 16;
             }
             if (!((mystique->type >= MGA_1064SG) && (mystique->crtcext_idx == 0) &&
                 (mystique->crtcext_regs[3] & CRTCX_R3_MGAMODE)))
@@ -1196,15 +1215,15 @@ mystique_recalc_mapping(mystique_t *mystique)
             default:
                 break;
         }
-        if (svga->gdcreg[6] & 0xc) {
-            /*64k banks*/
-            svga->read_bank  = (mystique->crtcext_regs[4] & 0x7f) << 16;
-            svga->write_bank = (mystique->crtcext_regs[4] & 0x7f) << 16;
-        } else {
-            /*128k banks*/
-            svga->read_bank  = (mystique->crtcext_regs[4] & 0x7e) << 16;
-            svga->write_bank = (mystique->crtcext_regs[4] & 0x7e) << 16;
-        }
+        uint8_t page = mystique->crtcext_regs[4] &
+                       ((1 << mga_chip[mystique->type].vga_page_bits) - 1);
+
+        /*128k banks take the page field one bit further up.*/
+        if (!(svga->gdcreg[6] & 0xc))
+            page &= ~1;
+
+        svga->read_bank  = page << 16;
+        svga->write_bank = page << 16;
     } else
         mem_mapping_disable(&svga->mapping);
 }
@@ -2481,7 +2500,7 @@ mystique_accel_ctrl_write_l(uint32_t addr, uint32_t val, void *priv)
             break;
 
         case REG_YDST:
-            mystique->dwgreg.ydst = val & 0x3fffff;
+            mystique->dwgreg.ydst = val & MGA_YDST_MASK(mystique);
             if (mystique->dwgreg.pitch & PITCH_YLIN) {
                 mystique->dwgreg.ydst_lin = (mystique->dwgreg.ydst << 5) + mystique->dwgreg.ydstorg;
                 mystique->dwgreg.selline  = val >> 29;
@@ -2657,11 +2676,17 @@ mystique_accel_ctrl_write_l(uint32_t addr, uint32_t val, void *priv)
 
         case REG_SECEND:
             mystique->dma.secend = val;
-            if (mystique->dma.state != MGA_DMA_STATE_SEC && (mystique->dma.secaddress & DMA_ADDR_MASK) != (mystique->dma.secend & DMA_ADDR_MASK))
+            /*The 2064W is not a bus master: no list channel runs on it and no
+              soft trap is taken, so neither status bit can ever be set there.*/
+            if (mga_chip[mystique->type].has_busmaster &&
+                mystique->dma.state != MGA_DMA_STATE_SEC && (mystique->dma.secaddress & DMA_ADDR_MASK) != (mystique->dma.secend & DMA_ADDR_MASK))
                 mystique->dma.state = MGA_DMA_STATE_SEC;
             break;
 
         case REG_SOFTRAP:
+            if (!mga_chip[mystique->type].has_busmaster)
+                break;
+
             mystique->dma.state           = MGA_DMA_STATE_IDLE;
             mystique->dma.pri_state       = 0;
             mystique->dma.words_expected  = 0;
@@ -2705,7 +2730,10 @@ mystique_accel_ctrl_write_l(uint32_t addr, uint32_t val, void *priv)
             break;
 
         case REG_TEXFILTER:
-            mystique->dwgreg.texfilter = val;
+            /*Only the G100 has this register; on the older chips the address is
+              a reserved location and nothing here is programmable.*/
+            if (mga_chip[mystique->type].has_texfilter)
+                mystique->dwgreg.texfilter = val;
             break;
 
         default:
@@ -2752,7 +2780,7 @@ mystique_ctrl_write_l(uint32_t addr, uint32_t val, void *priv)
                 break;
             }
             //pclog("PRIMADDRESS = 0x%08X, PRIMEND = 0x%08X\n", mystique->dma.primaddress, mystique->dma.primend);
-            if (mystique->dma.state == MGA_DMA_STATE_IDLE && (mystique->dma.primaddress & DMA_ADDR_MASK) != (mystique->dma.primend & DMA_ADDR_MASK)) {
+            if (mga_chip[mystique->type].has_busmaster && mystique->dma.state == MGA_DMA_STATE_IDLE && (mystique->dma.primaddress & DMA_ADDR_MASK) != (mystique->dma.primend & DMA_ADDR_MASK)) {
                 mystique->endprdmasts_pending = 0;
                 mystique->status &= ~STATUS_ENDPRDMASTS;
 
@@ -3713,7 +3741,10 @@ blit_iload_iload(mystique_t *mystique, uint32_t data, int size)
     int                  min_size = 8;
     uint32_t             bltckey = mystique->dwgreg.fcol;
     uint32_t             bltcmsk = mystique->dwgreg.bcol;
-    const int            transc    = mystique->dwgreg.dwgctrl_running & DWGCTRL_TRANSC;
+    /*Color-keyed ("transparent") ILOAD does not exist on the 2064W: that chip
+      has no key or mask field, and its transc applies to color expansion only.*/
+    const int            transc    = mga_chip[mystique->type].has_colorkey &&
+                                     (mystique->dwgreg.dwgctrl_running & DWGCTRL_TRANSC);
     const int            trans_sel = (mystique->dwgreg.dwgctrl_running & DWGCTRL_TRANS_MASK) >> DWGCTRL_TRANS_SHIFT;
     uint8_t const *const trans     = &trans_masks[trans_sel][(mystique->dwgreg.selline & 3) * 4];
     uint32_t             data_mask = 1;
@@ -4721,14 +4752,14 @@ blit_line(mystique_t *mystique, int closed, int autoline)
                     x += (mystique->dwgreg.sgn.sdxl ? -1 : 1);
                 else {
                     mystique->dwgreg.ydst += (mystique->dwgreg.sgn.sdy ? -1 : 1);
-                    mystique->dwgreg.ydst &= 0x7fffff;
+                    mystique->dwgreg.ydst &= MGA_YDST_MASK(mystique);
                     mystique->dwgreg.ydst_lin += (mystique->dwgreg.sgn.sdy ? -(mystique->dwgreg.pitch & PITCH_MASK) : (mystique->dwgreg.pitch & PITCH_MASK));
                 }
                 if (mystique->dwgreg.err >= 0) {
                     mystique->dwgreg.err += mystique->dwgreg.k2;
                     if (mystique->dwgreg.sgn.sdydxl) {
                         mystique->dwgreg.ydst += (mystique->dwgreg.sgn.sdy ? -1 : 1);
-                        mystique->dwgreg.ydst &= 0x7fffff;
+                        mystique->dwgreg.ydst &= MGA_YDST_MASK(mystique);
                         mystique->dwgreg.ydst_lin += (mystique->dwgreg.sgn.sdy ? -(mystique->dwgreg.pitch & PITCH_MASK) : (mystique->dwgreg.pitch & PITCH_MASK));
                     } else
                         x += (mystique->dwgreg.sgn.sdxl ? -1 : 1);
@@ -5006,7 +5037,7 @@ blit_trap(mystique_t *mystique)
                 err_r += mystique->dwgreg.ar[5];
 
                 mystique->dwgreg.ydst++;
-                mystique->dwgreg.ydst &= 0x7fffff;
+                mystique->dwgreg.ydst &= MGA_YDST_MASK(mystique);
                 mystique->dwgreg.ydst_lin += (mystique->dwgreg.pitch & PITCH_MASK);
 
                 mystique->dwgreg.selline = (mystique->dwgreg.selline + 1) & 7;
@@ -5090,7 +5121,7 @@ blit_trap(mystique_t *mystique)
                 err_r += mystique->dwgreg.ar[5];
 
                 mystique->dwgreg.ydst++;
-                mystique->dwgreg.ydst &= 0x7fffff;
+                mystique->dwgreg.ydst &= MGA_YDST_MASK(mystique);
                 mystique->dwgreg.ydst_lin += (mystique->dwgreg.pitch & PITCH_MASK);
 
                 mystique->dwgreg.selline = (mystique->dwgreg.selline + 1) & 7;
@@ -5234,7 +5265,7 @@ blit_trap(mystique_t *mystique)
                 mystique->dwgreg.dr[12] += dx * mystique->dwgreg.dr[14];
 
                 mystique->dwgreg.ydst++;
-                mystique->dwgreg.ydst &= 0x7fffff;
+                mystique->dwgreg.ydst &= MGA_YDST_MASK(mystique);
                 mystique->dwgreg.ydst_lin += (mystique->dwgreg.pitch & PITCH_MASK);
 
                 mystique->dwgreg.selline = (mystique->dwgreg.selline + 1) & 7;
@@ -5752,7 +5783,7 @@ skip_pixel:
                 mystique->dwgreg.alphastart &= 0xFFFFFF;
 
                 mystique->dwgreg.ydst++;
-                mystique->dwgreg.ydst &= 0x7fffff;
+                mystique->dwgreg.ydst &= MGA_YDST_MASK(mystique);
                 mystique->dwgreg.ydst_lin += (mystique->dwgreg.pitch & PITCH_MASK);
 
                 mystique->dwgreg.selline = (mystique->dwgreg.selline + 1) & 7;
@@ -5779,6 +5810,9 @@ blit_bitblt(mystique_t *mystique)
     const int trans_sel = (mystique->dwgreg.dwgctrl_running & DWGCTRL_TRANS_MASK) >> DWGCTRL_TRANS_SHIFT;
     uint32_t  bltckey   = mystique->dwgreg.fcol;
     uint32_t  bltcmsk   = mystique->dwgreg.bcol;
+    /*Color-keyed ("transparent") BITBLT does not exist on the 2064W.*/
+    const int transc    = mga_chip[mystique->type].has_colorkey &&
+                          (mystique->dwgreg.dwgctrl_running & DWGCTRL_TRANSC);
 
     switch (mystique->maccess_running & MACCESS_PWIDTH_MASK) {
         case MACCESS_PWIDTH_8:
@@ -6098,7 +6132,7 @@ blit_bitblt(mystique_t *mystique)
                                     case MACCESS_PWIDTH_8:
                                         src = svga->vram[src_addr & mystique->vram_mask];
                                         dst = svga->vram[(mystique->dwgreg.ydst_lin + x) & mystique->vram_mask];
-                                        if (!((!(mystique->dwgreg.dwgctrl_running & DWGCTRL_TRANSC) || (src & bltcmsk) != bltckey)))
+                                        if (!((!transc || (src & bltcmsk) != bltckey)))
                                             break;
 
                                         dst = bitop(src, dst, mystique->dwgreg.dwgctrl_running);
@@ -6110,7 +6144,7 @@ blit_bitblt(mystique_t *mystique)
                                     case MACCESS_PWIDTH_16:
                                         src = ((uint16_t *) svga->vram)[src_addr & mystique->vram_mask_w];
                                         dst = ((uint16_t *) svga->vram)[(mystique->dwgreg.ydst_lin + x) & mystique->vram_mask_w];
-                                        if (!((!(mystique->dwgreg.dwgctrl_running & DWGCTRL_TRANSC) || (src & bltcmsk) != bltckey)))
+                                        if (!((!transc || (src & bltcmsk) != bltckey)))
                                             break;
 
                                         dst = bitop(src, dst, mystique->dwgreg.dwgctrl_running);
@@ -6122,7 +6156,7 @@ blit_bitblt(mystique_t *mystique)
                                     case MACCESS_PWIDTH_24:
                                         src     = *(uint32_t *) &svga->vram[(src_addr * 3) & mystique->vram_mask];
                                         old_dst = *(uint32_t *) &svga->vram[((mystique->dwgreg.ydst_lin + x) * 3) & mystique->vram_mask];
-                                        if (!((!(mystique->dwgreg.dwgctrl_running & DWGCTRL_TRANSC) || (src & bltcmsk) != bltckey)))
+                                        if (!((!transc || (src & bltcmsk) != bltckey)))
                                             break;
 
                                         dst = bitop(src, old_dst, mystique->dwgreg.dwgctrl_running);
@@ -6134,7 +6168,7 @@ blit_bitblt(mystique_t *mystique)
                                     case MACCESS_PWIDTH_32:
                                         src = ((uint32_t *) svga->vram)[src_addr & mystique->vram_mask_l];
                                         dst = ((uint32_t *) svga->vram)[(mystique->dwgreg.ydst_lin + x) & mystique->vram_mask_l];
-                                        if (!((!(mystique->dwgreg.dwgctrl_running & DWGCTRL_TRANSC) || (src & bltcmsk) != bltckey)))
+                                        if (!((!transc || (src & bltcmsk) != bltckey)))
                                             break;
 
                                         dst = bitop(src, dst, mystique->dwgreg.dwgctrl_running);
@@ -6362,6 +6396,19 @@ mystique_start_blit(mystique_t *mystique)
 
     mystique->dwgreg.dwgctrl_running = mystique->dwgreg.dwgctrl;
     mystique->maccess_running        = mystique->maccess;
+
+    /*An opcode its own chip lists as reserved is not a drawing operation on
+      this card. What the silicon does with one is not documented, so nothing
+      is drawn; the submission is completed so the engine does not read busy.*/
+    if (!(mga_chip[mystique->type].opcodes &
+          (1 << (mystique->dwgreg.dwgctrl_running & DWGCTRL_OPCODE_MASK)))) {
+        mystique_unimpl("mystique_start_blit: opcode %01x reserved on this chip\n",
+                        mystique->dwgreg.dwgctrl_running & DWGCTRL_OPCODE_MASK);
+        mystique->blitter_complete_refcount++;
+        end_time = plat_timer_read();
+        mystique->blitter_time += end_time - start_time;
+        return;
+    }
 
     switch (mystique->dwgreg.dwgctrl_running & DWGCTRL_OPCODE_MASK) {
         case DWGCTRL_OPCODE_LINE_OPEN:
