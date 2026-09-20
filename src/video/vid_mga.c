@@ -3726,10 +3726,13 @@ blit_fbitblt(mystique_t *mystique)
                 break;
         }
 
-        if (mystique->dwgreg.sgn.sdy)
+        if (mystique->dwgreg.sgn.sdy) {
             mystique->dwgreg.ydst_lin -= (mystique->dwgreg.pitch & PITCH_MASK);
-        else
+            mystique->dwgreg.selline = (mystique->dwgreg.selline - 1) & 7;
+        } else {
             mystique->dwgreg.ydst_lin += (mystique->dwgreg.pitch & PITCH_MASK);
+            mystique->dwgreg.selline = (mystique->dwgreg.selline + 1) & 7;
+        }
     }
 
     mystique->blitter_complete_refcount++;
@@ -3763,7 +3766,7 @@ blit_iload_iload(mystique_t *mystique, uint32_t data, int size)
     const int            transc    = mga_chip[mystique->type].has_colorkey &&
                                      (mystique->dwgreg.dwgctrl_running & DWGCTRL_TRANSC);
     const int            trans_sel = (mystique->dwgreg.dwgctrl_running & DWGCTRL_TRANS_MASK) >> DWGCTRL_TRANS_SHIFT;
-    uint8_t const *const trans     = &trans_masks[trans_sel][(mystique->dwgreg.selline & 3) * 4];
+    uint8_t const       *trans     = &trans_masks[trans_sel][(mystique->dwgreg.selline & 3) * 4];
     uint32_t             data_mask = 1;
     /* YUV stuff */
     int                  y0;
@@ -3898,7 +3901,7 @@ blit_iload_iload(mystique_t *mystique, uint32_t data, int size)
                                 break;
 
                             case MACCESS_PWIDTH_24:
-                                if (mystique->dwgreg.xdst >= mystique->dwgreg.cxleft && mystique->dwgreg.xdst <= mystique->dwgreg.cxright && mystique->dwgreg.ydst_lin >= mystique->dwgreg.ytop && mystique->dwgreg.ydst_lin <= mystique->dwgreg.ybot) {
+                                if (mystique->dwgreg.xdst >= mystique->dwgreg.cxleft && mystique->dwgreg.xdst <= mystique->dwgreg.cxright && mystique->dwgreg.ydst_lin >= mystique->dwgreg.ytop && mystique->dwgreg.ydst_lin <= mystique->dwgreg.ybot && draw) {
                                     uint32_t old_dst = AS_U32(svga->vram[((mystique->dwgreg.ydst_lin + mystique->dwgreg.xdst) * 3) & mystique->vram_mask]);
 
                                     dst                                                                                                          = bitop(data64, old_dst, mystique);
@@ -3932,6 +3935,7 @@ blit_iload_iload(mystique_t *mystique, uint32_t data, int size)
                             mystique->dwgreg.xdst = mystique->dwgreg.fxleft;
                             mystique->dwgreg.ydst_lin += (mystique->dwgreg.pitch & PITCH_MASK);
                             mystique->dwgreg.selline = (mystique->dwgreg.selline + 1) & 7;
+                            trans                    = &trans_masks[trans_sel][(mystique->dwgreg.selline & 3) * 4];
                             mystique->dwgreg.length_cur--;
                             if (!mystique->dwgreg.length_cur) {
                                 mystique->busy = 0;
@@ -4004,6 +4008,8 @@ blit_iload_iload(mystique_t *mystique, uint32_t data, int size)
                         if (mystique->dwgreg.xdst == mystique->dwgreg.fxright) {
                             mystique->dwgreg.xdst = mystique->dwgreg.fxleft;
                             mystique->dwgreg.ydst_lin += (mystique->dwgreg.pitch & PITCH_MASK);
+                            mystique->dwgreg.selline = (mystique->dwgreg.selline + 1) & 7;
+                            trans                    = &trans_masks[trans_sel][(mystique->dwgreg.selline & 3) * 4];
                             mystique->dwgreg.length_cur--;
                             if (!mystique->dwgreg.length_cur) {
                                 mystique->busy = 0;
@@ -4027,7 +4033,7 @@ blit_iload_iload(mystique_t *mystique, uint32_t data, int size)
                     data64 = mystique->dwgreg.iload_rem_data | ((uint64_t) data << mystique->dwgreg.iload_rem_count);
 
                     while (size >= 24) {
-                        if (mystique->dwgreg.xdst >= mystique->dwgreg.cxleft && mystique->dwgreg.xdst <= mystique->dwgreg.cxright && mystique->dwgreg.ydst_lin >= mystique->dwgreg.ytop && mystique->dwgreg.ydst_lin <= mystique->dwgreg.ybot) {
+                        if (mystique->dwgreg.xdst >= mystique->dwgreg.cxleft && mystique->dwgreg.xdst <= mystique->dwgreg.cxright && mystique->dwgreg.ydst_lin >= mystique->dwgreg.ytop && mystique->dwgreg.ydst_lin <= mystique->dwgreg.ybot && trans[mystique->dwgreg.xdst & 3]) {
                             switch (mystique->maccess_running & MACCESS_PWIDTH_MASK) {
                                 case MACCESS_PWIDTH_16:
                                 {
@@ -4070,6 +4076,8 @@ blit_iload_iload(mystique_t *mystique, uint32_t data, int size)
                         if (mystique->dwgreg.xdst == mystique->dwgreg.fxright) {
                             mystique->dwgreg.xdst = mystique->dwgreg.fxleft;
                             mystique->dwgreg.ydst_lin += (mystique->dwgreg.pitch & PITCH_MASK);
+                            mystique->dwgreg.selline = (mystique->dwgreg.selline + 1) & 7;
+                            trans                    = &trans_masks[trans_sel][(mystique->dwgreg.selline & 3) * 4];
                             mystique->dwgreg.length_cur--;
                             if (!mystique->dwgreg.length_cur) {
                                 mystique->busy = 0;
@@ -4132,6 +4140,7 @@ blit_iload_iload(mystique_t *mystique, uint32_t data, int size)
                             mystique->dwgreg.xdst = mystique->dwgreg.fxleft;
                             mystique->dwgreg.ydst_lin += (mystique->dwgreg.pitch & PITCH_MASK);
                             mystique->dwgreg.selline = (mystique->dwgreg.selline + 1) & 7;
+                            trans                    = &trans_masks[trans_sel][(mystique->dwgreg.selline & 3) * 4];
                             mystique->dwgreg.length_cur--;
                             if (!mystique->dwgreg.length_cur) {
                                 mystique->busy = 0;
@@ -4191,6 +4200,7 @@ blit_iload_iload(mystique_t *mystique, uint32_t data, int size)
                             mystique->dwgreg.xdst = mystique->dwgreg.fxleft;
                             mystique->dwgreg.ydst_lin += (mystique->dwgreg.pitch & PITCH_MASK);
                             mystique->dwgreg.selline = (mystique->dwgreg.selline + 1) & 7;
+                            trans                    = &trans_masks[trans_sel][(mystique->dwgreg.selline & 3) * 4];
                             mystique->dwgreg.length_cur--;
                             if (!mystique->dwgreg.length_cur) {
                                 mystique->busy = 0;
@@ -5938,10 +5948,13 @@ blit_bitblt(mystique_t *mystique)
                                 break;
                         }
 
-                        if (mystique->dwgreg.sgn.sdy)
+                        if (mystique->dwgreg.sgn.sdy) {
                             mystique->dwgreg.ydst_lin -= (mystique->dwgreg.pitch & PITCH_MASK);
-                        else
+                            mystique->dwgreg.selline = (mystique->dwgreg.selline - 1) & 7;
+                        } else {
                             mystique->dwgreg.ydst_lin += (mystique->dwgreg.pitch & PITCH_MASK);
+                            mystique->dwgreg.selline = (mystique->dwgreg.selline + 1) & 7;
+                        }
                     }
                     break;
 
@@ -6052,10 +6065,13 @@ blit_bitblt(mystique_t *mystique)
                                 break;
                         }
 
-                        if (mystique->dwgreg.sgn.sdy)
+                        if (mystique->dwgreg.sgn.sdy) {
                             mystique->dwgreg.ydst_lin -= (mystique->dwgreg.pitch & PITCH_MASK);
-                        else
+                            mystique->dwgreg.selline = (mystique->dwgreg.selline - 1) & 7;
+                        } else {
                             mystique->dwgreg.ydst_lin += (mystique->dwgreg.pitch & PITCH_MASK);
+                            mystique->dwgreg.selline = (mystique->dwgreg.selline + 1) & 7;
+                        }
                     }
                     break;
                 case DWGCTRL_BLTMOD_BMONOLEF:
@@ -6140,10 +6156,13 @@ blit_bitblt(mystique_t *mystique)
                                 break;
                         }
 
-                        if (mystique->dwgreg.sgn.sdy)
+                        if (mystique->dwgreg.sgn.sdy) {
                             mystique->dwgreg.ydst_lin -= (mystique->dwgreg.pitch & PITCH_MASK);
-                        else
+                            mystique->dwgreg.selline = (mystique->dwgreg.selline - 1) & 7;
+                        } else {
                             mystique->dwgreg.ydst_lin += (mystique->dwgreg.pitch & PITCH_MASK);
+                            mystique->dwgreg.selline = (mystique->dwgreg.selline + 1) & 7;
+                        }
                     }
                     break;
 
@@ -6246,10 +6265,13 @@ blit_bitblt(mystique_t *mystique)
                                 src_addr = ((src_addr + 32) & 0xe0) | (src_addr & ~0xe0);
                         }
 
-                        if (mystique->dwgreg.sgn.sdy)
+                        if (mystique->dwgreg.sgn.sdy) {
                             mystique->dwgreg.ydst_lin -= (mystique->dwgreg.pitch & PITCH_MASK);
-                        else
+                            mystique->dwgreg.selline = (mystique->dwgreg.selline - 1) & 7;
+                        } else {
                             mystique->dwgreg.ydst_lin += (mystique->dwgreg.pitch & PITCH_MASK);
+                            mystique->dwgreg.selline = (mystique->dwgreg.selline + 1) & 7;
+                        }
                     }
                     break;
 
