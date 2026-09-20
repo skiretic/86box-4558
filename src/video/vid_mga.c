@@ -5623,6 +5623,9 @@ blit_texture_trap(mystique_t *mystique)
                                     }
                             }
 
+                            /*The nine combinations the chip allows, as
+                              (tmodulate strans itrans decalckey); anything else
+                              is reserved and its result is undefined.*/
                             switch (mystique->dwgreg.texctl & (TEXCTL_TMODULATE | TEXCTL_STRANS | TEXCTL_ITRANS | TEXCTL_DECALCKEY)) {
                                 case 0:
                                     if (ctransp)
@@ -5642,9 +5645,23 @@ blit_texture_trap(mystique_t *mystique)
                                     }
                                     break;
 
+                                case TEXCTL_STRANS:
+                                    if (ctransp || atransp)
+                                        goto skip_pixel;
+                                    break;
+
                                 case (TEXCTL_STRANS | TEXCTL_DECALCKEY):
                                     if (ctransp)
                                         goto skip_pixel;
+                                    break;
+
+                                case (TEXCTL_STRANS | TEXCTL_ITRANS):
+                                    if (ctransp || !atransp)
+                                        goto skip_pixel;
+
+                                    tex_r = i_r;
+                                    tex_g = i_g;
+                                    tex_b = i_b;
                                     break;
 
                                 case TEXCTL_TMODULATE:
@@ -5665,6 +5682,14 @@ blit_texture_trap(mystique_t *mystique)
                                         tex_g = (tex_g * i_g) >> 8;
                                         tex_b = (tex_b * i_b) >> 8;
                                     }
+                                    break;
+
+                                case (TEXCTL_TMODULATE | TEXCTL_STRANS | TEXCTL_DECALCKEY):
+                                    if (ctransp)
+                                        goto skip_pixel;
+                                    tex_r = (tex_r * i_r) >> 8;
+                                    tex_g = (tex_g * i_g) >> 8;
+                                    tex_b = (tex_b * i_b) >> 8;
                                     break;
 
                                 case (TEXCTL_STRANS | TEXCTL_ITRANS | TEXCTL_DECALCKEY):
