@@ -3767,6 +3767,12 @@ blit_iload_iload(mystique_t *mystique, uint32_t data, int size)
                                      (mystique->dwgreg.dwgctrl_running & DWGCTRL_TRANSC);
     const int            trans_sel = (mystique->dwgreg.dwgctrl_running & DWGCTRL_TRANS_MASK) >> DWGCTRL_TRANS_SHIFT;
     uint8_t const       *trans     = &trans_masks[trans_sel][(mystique->dwgreg.selline & 3) * 4];
+    /*An image load may carry a scanning direction of its own (G100 5-53).*/
+    const int16_t        x_first   = mystique->dwgreg.sgn.scanleft ? mystique->dwgreg.fxright : mystique->dwgreg.fxleft;
+    const int16_t        x_last    = mystique->dwgreg.sgn.scanleft ? mystique->dwgreg.fxleft : mystique->dwgreg.fxright;
+    const int            x_dir     = mystique->dwgreg.sgn.scanleft ? -1 : 1;
+    const int32_t        y_step    = mystique->dwgreg.sgn.sdy ? -(int32_t) (mystique->dwgreg.pitch & PITCH_MASK) : (int32_t) (mystique->dwgreg.pitch & PITCH_MASK);
+    const int            sel_step  = mystique->dwgreg.sgn.sdy ? -1 : 1;
     uint32_t             data_mask = 1;
     /* YUV stuff */
     int                  y0;
@@ -3931,10 +3937,10 @@ blit_iload_iload(mystique_t *mystique, uint32_t data, int size)
                                 break;
                         }
 
-                        if (mystique->dwgreg.xdst == mystique->dwgreg.fxright) {
-                            mystique->dwgreg.xdst = mystique->dwgreg.fxleft;
-                            mystique->dwgreg.ydst_lin += (mystique->dwgreg.pitch & PITCH_MASK);
-                            mystique->dwgreg.selline = (mystique->dwgreg.selline + 1) & 7;
+                        if (mystique->dwgreg.xdst == x_last) {
+                            mystique->dwgreg.xdst = x_first;
+                            mystique->dwgreg.ydst_lin += y_step;
+                            mystique->dwgreg.selline = (mystique->dwgreg.selline + sel_step) & 7;
                             trans                    = &trans_masks[trans_sel][(mystique->dwgreg.selline & 3) * 4];
                             mystique->dwgreg.length_cur--;
                             if (!mystique->dwgreg.length_cur) {
@@ -3946,7 +3952,7 @@ blit_iload_iload(mystique_t *mystique, uint32_t data, int size)
                             size   = 0;
                             break;
                         } else
-                            mystique->dwgreg.xdst = (mystique->dwgreg.xdst + 1) & 0xffff;
+                            mystique->dwgreg.xdst = (mystique->dwgreg.xdst + x_dir) & 0xffff;
                     }
                     mystique->dwgreg.iload_rem_count = size;
                     mystique->dwgreg.iload_rem_data  = data64;
@@ -4005,10 +4011,10 @@ blit_iload_iload(mystique_t *mystique, uint32_t data, int size)
                             }
                         }
 
-                        if (mystique->dwgreg.xdst == mystique->dwgreg.fxright) {
-                            mystique->dwgreg.xdst = mystique->dwgreg.fxleft;
-                            mystique->dwgreg.ydst_lin += (mystique->dwgreg.pitch & PITCH_MASK);
-                            mystique->dwgreg.selline = (mystique->dwgreg.selline + 1) & 7;
+                        if (mystique->dwgreg.xdst == x_last) {
+                            mystique->dwgreg.xdst = x_first;
+                            mystique->dwgreg.ydst_lin += y_step;
+                            mystique->dwgreg.selline = (mystique->dwgreg.selline + sel_step) & 7;
                             trans                    = &trans_masks[trans_sel][(mystique->dwgreg.selline & 3) * 4];
                             mystique->dwgreg.length_cur--;
                             if (!mystique->dwgreg.length_cur) {
@@ -4019,7 +4025,7 @@ blit_iload_iload(mystique_t *mystique, uint32_t data, int size)
                             if (!(mystique->dwgreg.dwgctrl_running & DWGCTRL_LINEAR))
                                 break;
                         } else
-                            mystique->dwgreg.xdst = (mystique->dwgreg.xdst + 1) & 0xffff;
+                            mystique->dwgreg.xdst = (mystique->dwgreg.xdst + x_dir) & 0xffff;
                         if (data_mask == 1)
                             data >>= 1;
                         else
@@ -4073,10 +4079,10 @@ blit_iload_iload(mystique_t *mystique, uint32_t data, int size)
 
                         data64 >>= 24;
                         size -= 24;
-                        if (mystique->dwgreg.xdst == mystique->dwgreg.fxright) {
-                            mystique->dwgreg.xdst = mystique->dwgreg.fxleft;
-                            mystique->dwgreg.ydst_lin += (mystique->dwgreg.pitch & PITCH_MASK);
-                            mystique->dwgreg.selline = (mystique->dwgreg.selline + 1) & 7;
+                        if (mystique->dwgreg.xdst == x_last) {
+                            mystique->dwgreg.xdst = x_first;
+                            mystique->dwgreg.ydst_lin += y_step;
+                            mystique->dwgreg.selline = (mystique->dwgreg.selline + sel_step) & 7;
                             trans                    = &trans_masks[trans_sel][(mystique->dwgreg.selline & 3) * 4];
                             mystique->dwgreg.length_cur--;
                             if (!mystique->dwgreg.length_cur) {
@@ -4088,7 +4094,7 @@ blit_iload_iload(mystique_t *mystique, uint32_t data, int size)
                             size   = 0;
                             break;
                         } else
-                            mystique->dwgreg.xdst = (mystique->dwgreg.xdst + 1) & 0xffff;
+                            mystique->dwgreg.xdst = (mystique->dwgreg.xdst + x_dir) & 0xffff;
                     }
 
                     mystique->dwgreg.iload_rem_count = size;
@@ -4136,10 +4142,10 @@ blit_iload_iload(mystique_t *mystique, uint32_t data, int size)
 
                         size = 0;
 
-                        if (mystique->dwgreg.xdst == mystique->dwgreg.fxright) {
-                            mystique->dwgreg.xdst = mystique->dwgreg.fxleft;
-                            mystique->dwgreg.ydst_lin += (mystique->dwgreg.pitch & PITCH_MASK);
-                            mystique->dwgreg.selline = (mystique->dwgreg.selline + 1) & 7;
+                        if (mystique->dwgreg.xdst == x_last) {
+                            mystique->dwgreg.xdst = x_first;
+                            mystique->dwgreg.ydst_lin += y_step;
+                            mystique->dwgreg.selline = (mystique->dwgreg.selline + sel_step) & 7;
                             trans                    = &trans_masks[trans_sel][(mystique->dwgreg.selline & 3) * 4];
                             mystique->dwgreg.length_cur--;
                             if (!mystique->dwgreg.length_cur) {
@@ -4151,7 +4157,7 @@ blit_iload_iload(mystique_t *mystique, uint32_t data, int size)
                             size   = 0;
                             break;
                         } else
-                            mystique->dwgreg.xdst = (mystique->dwgreg.xdst + 1) & 0xffff;
+                            mystique->dwgreg.xdst = (mystique->dwgreg.xdst + x_dir) & 0xffff;
                     }
                     mystique->dwgreg.iload_rem_count = size;
                     mystique->dwgreg.iload_rem_data  = data64;
@@ -4196,10 +4202,10 @@ blit_iload_iload(mystique_t *mystique, uint32_t data, int size)
                         size -= 32;
                         data64 >>= 32ULL;
 
-                        if (mystique->dwgreg.xdst == mystique->dwgreg.fxright) {
-                            mystique->dwgreg.xdst = mystique->dwgreg.fxleft;
-                            mystique->dwgreg.ydst_lin += (mystique->dwgreg.pitch & PITCH_MASK);
-                            mystique->dwgreg.selline = (mystique->dwgreg.selline + 1) & 7;
+                        if (mystique->dwgreg.xdst == x_last) {
+                            mystique->dwgreg.xdst = x_first;
+                            mystique->dwgreg.ydst_lin += y_step;
+                            mystique->dwgreg.selline = (mystique->dwgreg.selline + sel_step) & 7;
                             trans                    = &trans_masks[trans_sel][(mystique->dwgreg.selline & 3) * 4];
                             mystique->dwgreg.length_cur--;
                             if (!mystique->dwgreg.length_cur) {
@@ -4211,7 +4217,7 @@ blit_iload_iload(mystique_t *mystique, uint32_t data, int size)
                             size   = 0;
                             break;
                         } else
-                            mystique->dwgreg.xdst = (mystique->dwgreg.xdst + 1) & 0xffff;
+                            mystique->dwgreg.xdst = (mystique->dwgreg.xdst + x_dir) & 0xffff;
                     }
                     mystique->dwgreg.iload_rem_count = size;
                     mystique->dwgreg.iload_rem_data  = data64;
@@ -4240,9 +4246,10 @@ blit_iload_iload(mystique_t *mystique, uint32_t data, int size)
                         }
 
                         size = 0;
-                        if (mystique->dwgreg.xdst == mystique->dwgreg.fxright) {
-                            mystique->dwgreg.xdst = mystique->dwgreg.fxleft;
-                            mystique->dwgreg.ydst_lin += (mystique->dwgreg.pitch & PITCH_MASK);
+                        if (mystique->dwgreg.xdst == x_last) {
+                            mystique->dwgreg.xdst = x_first;
+                            mystique->dwgreg.ydst_lin += y_step;
+                            mystique->dwgreg.selline = (mystique->dwgreg.selline + sel_step) & 7;
                             mystique->dwgreg.length_cur--;
                             if (!mystique->dwgreg.length_cur) {
                                 mystique->busy = 0;
@@ -4251,7 +4258,7 @@ blit_iload_iload(mystique_t *mystique, uint32_t data, int size)
                             }
                             break;
                         } else
-                            mystique->dwgreg.xdst = (mystique->dwgreg.xdst + 1) & 0xffff;
+                            mystique->dwgreg.xdst = (mystique->dwgreg.xdst + x_dir) & 0xffff;
                     }
 
                     mystique->dwgreg.iload_rem_count = size;
@@ -6309,7 +6316,7 @@ blit_iload(mystique_t *mystique)
                 case DWGCTRL_BLTMOD_BU32RGB:
                 case DWGCTRL_BLTMOD_BUYUV:
                     mystique->dwgreg.length_cur      = mystique->dwgreg.length;
-                    mystique->dwgreg.xdst            = mystique->dwgreg.fxleft;
+                    mystique->dwgreg.xdst            = mystique->dwgreg.sgn.scanleft ? mystique->dwgreg.fxright : mystique->dwgreg.fxleft;
                     mystique->dwgreg.iload_rem_data  = 0;
                     mystique->dwgreg.iload_rem_count = 0;
                     mystique->busy                   = 1;
