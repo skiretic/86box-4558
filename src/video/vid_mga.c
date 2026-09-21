@@ -5804,7 +5804,14 @@ blit_texture_trap(mystique_t *mystique)
                                 }
                             }
 
-                            if (dest32) {
+                            if ((mystique->maccess_running & MACCESS_PWIDTH_MASK) == MACCESS_PWIDTH_8) {
+                                /*8 bpp is a palettized destination and the specs do not
+                                  say how a textured pixel reaches one; the image-load
+                                  path's conversion is reused rather than inventing a
+                                  second one.*/
+                                ((uint8_t *) svga->vram)[(mystique->dwgreg.ydst_lin + x_l) & mystique->vram_mask] = plnwt(dither_24_to_8(tex_r, tex_g, tex_b), ((uint8_t *) svga->vram)[(mystique->dwgreg.ydst_lin + x_l) & mystique->vram_mask], mystique->dwgreg.plnwt);
+                                svga->changedvram[((mystique->dwgreg.ydst_lin + x_l) & mystique->vram_mask) >> 12] = changeframecount;
+                            } else if (dest32) {
                                 ((uint32_t *) svga->vram)[(mystique->dwgreg.ydst_lin + x_l) & mystique->vram_mask_l] = plnwt(tex_b | (tex_g << 8) | (tex_r << 16), ((uint32_t *) svga->vram)[(mystique->dwgreg.ydst_lin + x_l) & mystique->vram_mask_l], mystique->dwgreg.plnwt);
                                 svga->changedvram[((mystique->dwgreg.ydst_lin + x_l) & mystique->vram_mask_l) >> 10] = changeframecount;
                             } else {
