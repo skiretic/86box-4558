@@ -450,6 +450,9 @@ typedef struct mga_chip_t {
 
 #define MGA_YDST_MASK(m) ((1u << mga_chip[(m)->type].ydst_bits) - 1u)
 
+/*A register field of n bits, signed, read out of the dword that carried it.*/
+#define SEXT(v, n) ((uint32_t) (((int32_t) ((v) << (32 - (n)))) >> (32 - (n))))
+
 static const mga_chip_t mga_chip[] = {
   /* page, ydst, ckey, tfilt, busm, opcodes */
     {  7,   22,    0,    0,    0, MGA_OPS_2064W  }, /*2064W*/
@@ -2594,26 +2597,35 @@ mystique_accel_ctrl_write_l(uint32_t addr, uint32_t val, void *priv)
                 blit_iload_write(mystique, val, 32);
             break;
 
+        /*Each AR register is signed at its own field width, and the bits above
+          the field are reserved, so a guest writing a negative step in the
+          documented narrow form means the negative value. AR0 is left as
+          written: the spec gives it 18 bits, this driver puts a 23-bit source
+          pixel index there, and the per-line end test compares it against an
+          absolute address -- narrowing it would break every blit. That one
+          needs hardware to settle.*/
         case REG_AR0:
             mystique->dwgreg.ar[0] = val;
             break;
         case REG_AR1:
-            mystique->dwgreg.ar[1] = val;
+            mystique->dwgreg.ar[1] = SEXT(val, 24);
             break;
         case REG_AR2:
-            mystique->dwgreg.ar[2] = val;
+            mystique->dwgreg.ar[2] = SEXT(val, 18);
             break;
         case REG_AR3:
-            mystique->dwgreg.ar[3] = val;
+            /*spage <26:24> extends ar3 to a 27-bit source address (26-bit on
+              the 1064SG and 2064W) and is not touched by the ALU.*/
+            mystique->dwgreg.ar[3] = val & 0x07ffffff;
             break;
         case REG_AR4:
-            mystique->dwgreg.ar[4] = val;
+            mystique->dwgreg.ar[4] = SEXT(val, 24);
             break;
         case REG_AR5:
-            mystique->dwgreg.ar[5] = val;
+            mystique->dwgreg.ar[5] = SEXT(val, 18);
             break;
         case REG_AR6:
-            mystique->dwgreg.ar[6] = val;
+            mystique->dwgreg.ar[6] = SEXT(val, 18);
             break;
 
         case REG_DR0_Z32LSB:
