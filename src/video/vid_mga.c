@@ -717,8 +717,10 @@ static double bayer_mat[4][4] =
 };
 
 static video_timings_t timing_matrox_millennium     = { .type = VIDEO_PCI, .write_b = 2, .write_w = 2, .write_l = 1, .read_b = 10, .read_w = 10, .read_l = 10 };
-static video_timings_t timing_matrox_mystique       = { .type = VIDEO_PCI, .write_b = 4, .write_w = 4, .write_l = 4, .read_b = 10, .read_w = 10, .read_l = 10 };
-static video_timings_t timing_matrox_mystique_agp   = { .type = VIDEO_AGP, .write_b = 4, .write_w = 4, .write_l = 4, .read_b = 10, .read_w = 10, .read_l = 10 };
+/*The later chips post frame buffer writes into the same FIFO with PCI burst,
+  so they are charged what the Millennium is.*/
+static video_timings_t timing_matrox_mystique       = { .type = VIDEO_PCI, .write_b = 2, .write_w = 2, .write_l = 1, .read_b = 10, .read_w = 10, .read_l = 10 };
+static video_timings_t timing_matrox_mystique_agp   = { .type = VIDEO_AGP, .write_b = 2, .write_w = 2, .write_l = 1, .read_b = 10, .read_w = 10, .read_l = 10 };
 
 static void mystique_start_blit(mystique_t *mystique);
 static void mystique_update_irqs(mystique_t *mystique);
