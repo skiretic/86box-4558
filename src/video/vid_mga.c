@@ -2451,6 +2451,28 @@ mystique_ctrl_read_l(uint32_t addr, void *priv)
     return ret;
 }
 
+/*A register read is a non-posted bus read: the CPU waits for the card, as on an
+  LFB read. Charged once per guest access, not per byte the handlers assemble.*/
+static uint8_t
+mystique_ctrl_readb_bus(uint32_t addr, void *priv)
+{
+    const mystique_t *mystique = (mystique_t *) priv;
+
+    cycles -= mystique->svga.monitor->mon_video_timing_read_b;
+
+    return mystique_ctrl_read_b(addr, priv);
+}
+
+static uint32_t
+mystique_ctrl_readl_bus(uint32_t addr, void *priv)
+{
+    const mystique_t *mystique = (mystique_t *) priv;
+
+    cycles -= mystique->svga.monitor->mon_video_timing_read_l;
+
+    return mystique_ctrl_read_l(addr, priv);
+}
+
 static void
 mystique_accel_ctrl_write_l(uint32_t addr, uint32_t val, void *priv)
 {
@@ -7219,7 +7241,7 @@ mystique_init(const device_t *info)
 
     io_sethandler(0x03a0, 0x0040, mystique_in, NULL, NULL, mystique_out, NULL, NULL, mystique);
     mem_mapping_add(&mystique->ctrl_mapping, 0, 0,
-                    mystique_ctrl_read_b, NULL, mystique_ctrl_read_l,
+                    mystique_ctrl_readb_bus, NULL, mystique_ctrl_readl_bus,
                     mystique_ctrl_write_b, NULL, mystique_ctrl_write_l,
                     NULL, 0, mystique);
     mem_mapping_disable(&mystique->ctrl_mapping);
