@@ -2638,15 +2638,17 @@ mystique_accel_ctrl_write_l(uint32_t addr, uint32_t val, void *priv)
 
         case REG_DR0:
             mystique->dwgreg.dr[0] = val;
-            mystique->dwgreg.extended_dr[0] = (mystique->dwgreg.extended_dr[0] & ~0xFFFFull) | ((uint64_t)val << 16ull);
+            /*A write to the 16-bit form sets the whole register: the dword into
+              bits 47:16, zero into bits 15:0.*/
+            mystique->dwgreg.extended_dr[0] = (uint64_t) val << 16ull;
             break;
         case REG_DR2:
             mystique->dwgreg.dr[2] = val;
-            mystique->dwgreg.extended_dr[2] = (mystique->dwgreg.extended_dr[2] & ~0xFFFFull) | ((uint64_t)val << 16ull);
+            mystique->dwgreg.extended_dr[2] = (uint64_t) val << 16ull;
             break;
         case REG_DR3:
             mystique->dwgreg.dr[3] = val;
-            mystique->dwgreg.extended_dr[3] = (mystique->dwgreg.extended_dr[3] & ~0xFFFFull) | ((uint64_t)val << 16ull);
+            mystique->dwgreg.extended_dr[3] = (uint64_t) val << 16ull;
             break;
         case REG_DR4:
             mystique->dwgreg.dr[4] = val;
@@ -4896,7 +4898,7 @@ blit_line(mystique_t *mystique, int closed, int autoline)
                     mystique->dwgreg.dr[0] = (mystique->dwgreg.extended_dr[0] >> 16) & 0xFFFFFFFF;
                 } else {
                     mystique->dwgreg.dr[0] += mystique->dwgreg.dr[2];
-                    mystique->dwgreg.extended_dr[0] = (mystique->dwgreg.extended_dr[0] & ~0xFFFFull) | ((uint64_t)mystique->dwgreg.dr[0] << 16ull);
+                    mystique->dwgreg.extended_dr[0] = (uint64_t) mystique->dwgreg.dr[0] << 16ull;
                 }
                 mystique->dwgreg.dr[4] += mystique->dwgreg.dr[6];
                 mystique->dwgreg.dr[8] += mystique->dwgreg.dr[10];
@@ -4915,7 +4917,7 @@ blit_line(mystique_t *mystique, int closed, int autoline)
                         mystique->dwgreg.dr[0] = (mystique->dwgreg.extended_dr[0] >> 16) & 0xFFFFFFFF;
                     } else {
                         mystique->dwgreg.dr[0] += mystique->dwgreg.dr[3];
-                        mystique->dwgreg.extended_dr[0] = (mystique->dwgreg.extended_dr[0] & ~0xFFFFull) | ((uint64_t)mystique->dwgreg.dr[0] << 16ull);
+                        mystique->dwgreg.extended_dr[0] = (uint64_t) mystique->dwgreg.dr[0] << 16ull;
                     }
                     mystique->dwgreg.dr[4] += mystique->dwgreg.dr[7];
                     mystique->dwgreg.dr[8] += mystique->dwgreg.dr[11];
@@ -5242,7 +5244,7 @@ blit_trap(mystique_t *mystique)
                         mystique->dwgreg.dr[0] = (mystique->dwgreg.extended_dr[0] >> 16) & 0xFFFFFFFF;
                     } else {
                         mystique->dwgreg.dr[0] += mystique->dwgreg.dr[2];
-                        mystique->dwgreg.extended_dr[0] = (mystique->dwgreg.extended_dr[0] & ~0xFFFFull) | ((uint64_t)mystique->dwgreg.dr[0] << 16ull);
+                        mystique->dwgreg.extended_dr[0] = (uint64_t) mystique->dwgreg.dr[0] << 16ull;
                     }
                     mystique->dwgreg.dr[4] += mystique->dwgreg.dr[6];
                     mystique->dwgreg.dr[8] += mystique->dwgreg.dr[10];
@@ -5259,7 +5261,7 @@ blit_trap(mystique_t *mystique)
                     mystique->dwgreg.dr[0] = (mystique->dwgreg.extended_dr[0] >> 16) & 0xFFFFFFFF;
                 } else {
                     mystique->dwgreg.dr[0] = z_back + mystique->dwgreg.dr[3];
-                    mystique->dwgreg.extended_dr[0] = (mystique->dwgreg.extended_dr[0] & ~0xFFFFull) | ((uint64_t)mystique->dwgreg.dr[0] << 16ull);
+                    mystique->dwgreg.extended_dr[0] = (uint64_t) mystique->dwgreg.dr[0] << 16ull;
                 }
                 mystique->dwgreg.dr[4]  = r_back + mystique->dwgreg.dr[7];
                 mystique->dwgreg.dr[8]  = g_back + mystique->dwgreg.dr[11];
@@ -5283,7 +5285,7 @@ blit_trap(mystique_t *mystique)
                     mystique->dwgreg.dr[0] = (mystique->dwgreg.extended_dr[0] >> 16) & 0xFFFFFFFF;
                 } else {
                     mystique->dwgreg.dr[0] += dx * mystique->dwgreg.dr[2];
-                    mystique->dwgreg.extended_dr[0] = (mystique->dwgreg.extended_dr[0] & ~0xFFFFull) | ((uint64_t)mystique->dwgreg.dr[0] << 16ull);
+                    mystique->dwgreg.extended_dr[0] = (uint64_t) mystique->dwgreg.dr[0] << 16ull;
                 }
                 mystique->dwgreg.dr[4] += dx * mystique->dwgreg.dr[6];
                 mystique->dwgreg.dr[8] += dx * mystique->dwgreg.dr[10];
@@ -5770,7 +5772,7 @@ skip_pixel:
                         mystique->dwgreg.dr[0] = (mystique->dwgreg.extended_dr[0] >> 16) & 0xFFFFFFFF;
                     } else {
                         mystique->dwgreg.dr[0] += mystique->dwgreg.dr[2];
-                        mystique->dwgreg.extended_dr[0] = (mystique->dwgreg.extended_dr[0] & ~0xFFFFull) | ((uint64_t)mystique->dwgreg.dr[0] << 16ull);
+                        mystique->dwgreg.extended_dr[0] = (uint64_t) mystique->dwgreg.dr[0] << 16ull;
                     }
                     mystique->dwgreg.dr[4] += mystique->dwgreg.dr[6];
                     mystique->dwgreg.dr[8] += mystique->dwgreg.dr[10];
@@ -5789,7 +5791,7 @@ skip_pixel:
                     mystique->dwgreg.dr[0] = (mystique->dwgreg.extended_dr[0] >> 16) & 0xFFFFFFFF;
                 } else {
                     mystique->dwgreg.dr[0] = z_back + mystique->dwgreg.dr[3];
-                    mystique->dwgreg.extended_dr[0] = (mystique->dwgreg.extended_dr[0] & ~0xFFFFull) | ((uint64_t)mystique->dwgreg.dr[0] << 16ull);
+                    mystique->dwgreg.extended_dr[0] = (uint64_t) mystique->dwgreg.dr[0] << 16ull;
                 }
                 mystique->dwgreg.dr[4]      = r_back + mystique->dwgreg.dr[7];
                 mystique->dwgreg.dr[8]      = g_back + mystique->dwgreg.dr[11];
@@ -5820,7 +5822,7 @@ skip_pixel:
                     mystique->dwgreg.dr[0] = (mystique->dwgreg.extended_dr[0] >> 16) & 0xFFFFFFFF;
                 } else {
                     mystique->dwgreg.dr[0] += dx * mystique->dwgreg.dr[2];
-                    mystique->dwgreg.extended_dr[0] = (mystique->dwgreg.extended_dr[0] & ~0xFFFFull) | ((uint64_t)mystique->dwgreg.dr[0] << 16ull);
+                    mystique->dwgreg.extended_dr[0] = (uint64_t) mystique->dwgreg.dr[0] << 16ull;
                 }
                 mystique->dwgreg.dr[4] += dx * mystique->dwgreg.dr[6];
                 mystique->dwgreg.dr[8] += dx * mystique->dwgreg.dr[10];
