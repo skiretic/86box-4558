@@ -5503,27 +5503,27 @@ texture_read(mystique_t *mystique, int *tex_r, int *tex_g, int *tex_b, int *atra
             s_frac = t_frac = .25;
             break;
     }
-    if (s_frac && s != w_mask)
+    if (s_frac || t_frac)
     {
-        int s_tex_r = 0, s_tex_g = 0, s_tex_b = 0, s_tex_a = 255;
-        texture_texel_fetch(mystique, &s_tex_r, &s_tex_g, &s_tex_b, &s_tex_a, NULL, s + 1, t, tex_pitch);
-        *tex_r = (int)lerp(*tex_r, s_tex_r, s_frac);
-        *tex_g = (int)lerp(*tex_g, s_tex_g, s_frac);
-        *tex_b = (int)lerp(*tex_b, s_tex_b, s_frac);
-        *tex_a = (int)lerp(*tex_a, s_tex_a, s_frac);
-        if (*tex_r > 255) *tex_r = 255;
-        if (*tex_g > 255) *tex_g = 255;
-        if (*tex_b > 255) *tex_b = 255;
-        if (*tex_a > 255) *tex_a = 255;
-    }
-    if (t_frac && t != h_mask)
-    {
-        int t_tex_r = 0, t_tex_g = 0, t_tex_b = 0, t_tex_a = 255;
-        texture_texel_fetch(mystique, &t_tex_r, &t_tex_g, &t_tex_b, &t_tex_a, NULL, s, t + 1, tex_pitch);
-        *tex_r = (int)lerp(*tex_r, t_tex_r, t_frac);
-        *tex_g = (int)lerp(*tex_g, t_tex_g, t_frac);
-        *tex_b = (int)lerp(*tex_b, t_tex_b, t_frac);
-        *tex_a = (int)lerp(*tex_a, t_tex_a, t_frac);
+        /*Bi-linear is a blend of the four texels around the sample. The
+          neighbour past the last column or row is column or row zero in repeat
+          mode and the edge texel itself under clamp; the weights themselves are
+          not published.*/
+        const int s1 = (s == w_mask) ? ((mystique->dwgreg.texctl & TEXCTL_CLAMPU) ? s : 0) : (s + 1);
+        const int t1 = (t == h_mask) ? ((mystique->dwgreg.texctl & TEXCTL_CLAMPV) ? t : 0) : (t + 1);
+        int       r10 = 0, g10 = 0, b10 = 0, a10 = 255;
+        int       r01 = 0, g01 = 0, b01 = 0, a01 = 255;
+        int       r11 = 0, g11 = 0, b11 = 0, a11 = 255;
+        const int r00 = *tex_r, g00 = *tex_g, b00 = *tex_b, a00 = *tex_a;
+
+        texture_texel_fetch(mystique, &r10, &g10, &b10, &a10, NULL, s1, t, tex_pitch);
+        texture_texel_fetch(mystique, &r01, &g01, &b01, &a01, NULL, s, t1, tex_pitch);
+        texture_texel_fetch(mystique, &r11, &g11, &b11, &a11, NULL, s1, t1, tex_pitch);
+
+        *tex_r = (int) lerp(lerp(r00, r10, s_frac), lerp(r01, r11, s_frac), t_frac);
+        *tex_g = (int) lerp(lerp(g00, g10, s_frac), lerp(g01, g11, s_frac), t_frac);
+        *tex_b = (int) lerp(lerp(b00, b10, s_frac), lerp(b01, b11, s_frac), t_frac);
+        *tex_a = (int) lerp(lerp(a00, a10, s_frac), lerp(a01, a11, s_frac), t_frac);
         if (*tex_r > 255) *tex_r = 255;
         if (*tex_g > 255) *tex_g = 255;
         if (*tex_b > 255) *tex_b = 255;
