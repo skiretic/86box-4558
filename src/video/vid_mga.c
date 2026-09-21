@@ -4923,12 +4923,18 @@ blit_line(mystique_t *mystique, int closed, int autoline)
 
                             case MACCESS_PWIDTH_16:
                                 if (!(mystique->dwgreg.dr[4] & (1 << 23)))
-                                    r = (mystique->dwgreg.dr[4] >> 18) & 0x1f;
+                                    r = (mystique->dwgreg.dr[4] >> 15) & 0xff;
                                 if (!(mystique->dwgreg.dr[8] & (1 << 23)))
-                                    g = (mystique->dwgreg.dr[8] >> 17) & 0x3f;
+                                    g = (mystique->dwgreg.dr[8] >> 15) & 0xff;
                                 if (!(mystique->dwgreg.dr[12] & (1 << 23)))
-                                    b = (mystique->dwgreg.dr[12] >> 18) & 0x1f;
-                                dst = (r << 11) | (g << 5) | b;
+                                    b = (mystique->dwgreg.dr[12] >> 15) & 0xff;
+                                /*dit555 picks the frame buffer's 16 bpp format for every
+                                  drawing cycle. The specs scope dithering to image loads
+                                  and trapezoids only, so a line is packed undithered.*/
+                                if (mystique->dwgreg.dither & 2)
+                                    dst = (b >> 3) | ((g >> 3) << 5) | ((r >> 3) << 10) | fcol_alpha_555(mystique, 0x80000000);
+                                else
+                                    dst = (b >> 3) | ((g >> 2) << 5) | ((r >> 3) << 11);
 
                                 ((uint16_t *) svga->vram)[(mystique->dwgreg.ydst_lin + x) & mystique->vram_mask_w] = plnwt(dst, ((uint16_t *) svga->vram)[(mystique->dwgreg.ydst_lin + x) & mystique->vram_mask_w], mystique->dwgreg.plnwt);
                                 svga->changedvram[((mystique->dwgreg.ydst_lin + x) & mystique->vram_mask_w) >> 11] = changeframecount;
