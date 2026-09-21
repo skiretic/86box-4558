@@ -2092,6 +2092,16 @@ mystique_accel_ctrl_write_b(uint32_t addr, uint8_t val, void *priv)
         case REG_TEXHEIGHT + 3:
             WRITE8(addr, mystique->dwgreg.texheight, val);
             break;
+
+        /*TEXFILTER takes byte and word access, unlike the drawing registers,
+          which are dword-only.*/
+        case REG_TEXFILTER:
+        case REG_TEXFILTER + 1:
+        case REG_TEXFILTER + 2:
+        case REG_TEXFILTER + 3:
+            if (mga_chip[mystique->type].has_texfilter)
+                WRITE8(addr, mystique->dwgreg.texfilter, val);
+            break;
         case REG_TEXCTL:
         case REG_TEXCTL + 1:
         case REG_TEXCTL + 2:
