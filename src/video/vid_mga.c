@@ -4706,8 +4706,8 @@ blit_line(mystique_t *mystique, int closed, int autoline)
         case DWGCTRL_ATYPE_RPL:
             while (mystique->dwgreg.length >= 0) {
                 if (x >= mystique->dwgreg.cxleft && x <= mystique->dwgreg.cxright && mystique->dwgreg.ydst_lin >= mystique->dwgreg.ytop && mystique->dwgreg.ydst_lin <= mystique->dwgreg.ybot) {
-                    pattern_y = ((mystique->dwgreg.funcnt % (mystique->dwgreg.stylelen + 1)) >> 4) & 0x7;
-                    pattern_x = (mystique->dwgreg.funcnt % (mystique->dwgreg.stylelen + 1)) & 0xf;
+                    pattern_y = (mystique->dwgreg.funcnt >> 4) & 0x7;
+                    pattern_x = mystique->dwgreg.funcnt & 0xf;
                     if (!transc || (mystique->dwgreg.pattern[pattern_y][pattern_x]))
                     switch (mystique->maccess_running & MACCESS_PWIDTH_MASK) {
                         case MACCESS_PWIDTH_8:
@@ -4793,8 +4793,14 @@ blit_line(mystique_t *mystique, int closed, int autoline)
                 } else
                     mystique->dwgreg.err += mystique->dwgreg.k1;
 
+                /*funcnt counts down and wraps from zero to stylelen, so the
+                  style repeats with the length the guest programmed; a closed
+                  line does not step it with its last pixel.*/
+                if (!closed || mystique->dwgreg.length)
+                    mystique->dwgreg.funcnt = mystique->dwgreg.funcnt
+                                                  ? mystique->dwgreg.funcnt - 1
+                                                  : mystique->dwgreg.stylelen;
                 mystique->dwgreg.length--;
-                mystique->dwgreg.funcnt--;
             }
             break;
 
