@@ -5473,6 +5473,7 @@ static uint16_t texture_texel_fetch(mystique_t *mystique, int *tex_r, int *tex_g
             *tex_r = ((src >> 10) & 0x1f) << 3;
             *tex_g = ((src >> 5) & 0x1f) << 3;
             *tex_b = (src & 0x1f) << 3;
+            *tex_a = (src & 0x8000) ? 255 : 0;
             if (((src >> 15) & mystique->dwgreg.ta_mask) == mystique->dwgreg.ta_key)
                 *atransp = 1;
             else
