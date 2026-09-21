@@ -445,6 +445,10 @@ typedef struct mga_chip_t {
     uint8_t  has_colorkey;  /*color-keyed BITBLT and ILOAD*/
     uint8_t  has_texfilter;
     uint8_t  has_busmaster; /*primary/secondary DMA channels and the soft trap*/
+    uint8_t  has_dwgreg1;   /*the second drawing-register range, 2C00h-2DFFh*/
+    uint8_t  has_dmamap;    /*DMAMAP and DWG_INDIR_WT*/
+    uint8_t  has_z32;       /*the 32-bit Z register pairs at 2C50h-2C6Ch*/
+    uint8_t  has_tlutload;  /*MACCESS tlutload*/
     uint16_t opcodes;
 } mga_chip_t;
 
@@ -454,12 +458,12 @@ typedef struct mga_chip_t {
 #define SEXT(v, n) ((uint32_t) (((int32_t) ((v) << (32 - (n)))) >> (32 - (n))))
 
 static const mga_chip_t mga_chip[] = {
-  /* page, ydst, ckey, tfilt, busm, opcodes */
-    {  7,   22,    0,    0,    0, MGA_OPS_2064W  }, /*2064W*/
-    {  7,   22,    1,    0,    1, MGA_OPS_1064SG }, /*1064SG*/
-    {  7,   22,    1,    0,    1, MGA_OPS_1064SG }, /*1164SG*/
-    {  8,   23,    1,    0,    1, MGA_OPS_ALL    }, /*2164W*/
-    {  7,   23,    1,    1,    1, MGA_OPS_G100   }  /*G100*/
+  /* page, ydst, ckey, tfilt, busm, dwgreg1, dmamap, z32, tlut, opcodes */
+    {  7,   22,    0,    0,    0,    0,    0,    0,    0, MGA_OPS_2064W  }, /*2064W*/
+    {  7,   22,    1,    0,    1,    1,    1,    0,    1, MGA_OPS_1064SG }, /*1064SG*/
+    {  7,   22,    1,    0,    1,    1,    1,    0,    1, MGA_OPS_1064SG }, /*1164SG*/
+    {  8,   23,    1,    0,    1,    1,    1,    1,    1, MGA_OPS_ALL    }, /*2164W*/
+    {  7,   23,    1,    1,    1,    1,    1,    1,    1, MGA_OPS_G100   }  /*G100*/
 };
 
 enum {
@@ -2207,7 +2211,10 @@ mystique_ctrl_write_b(uint32_t addr, uint8_t val, void *priv)
         mystique_iload_write_b(addr, val, priv);
         return;
     }
-    if ((addr & 0x3e00) == 0x1c00 || (addr & 0x3e00) == 0x2c00) {
+    /*The second drawing-register range is not on every chip; on the 2064W the
+      whole window is a reserved hole in the control aperture.*/
+    if ((addr & 0x3e00) == 0x1c00 ||
+        ((addr & 0x3e00) == 0x2c00 && mga_chip[mystique->type].has_dwgreg1)) {
         if ((addr & 0x300) == 0x100)
             mystique->blitter_submit_refcount++;
         mystique_queue(mystique, addr & 0x3fff, val, FIFO_WRITE_CTRL_BYTE);
@@ -2288,7 +2295,9 @@ mystique_ctrl_write_b(uint32_t addr, uint8_t val, void *priv)
         case REG_DMAMAP + 0xd:
         case REG_DMAMAP + 0xe:
         case REG_DMAMAP + 0xf:
-            mystique->dmamap[addr & 0xf] = val;
+            /*Reserved on the 2064W, along with DWG_INDIR_WT that reads it.*/
+            if (mga_chip[mystique->type].has_dmamap)
+                mystique->dmamap[addr & 0xf] = val;
             break;
 
         case REG_RST:
@@ -2628,32 +2637,47 @@ mystique_accel_ctrl_write_l(uint32_t addr, uint32_t val, void *priv)
             mystique->dwgreg.ar[6] = SEXT(val, 18);
             break;
 
+        /*The 32-bit Z register pairs come with zwidth, so they exist only where
+          zwidth does: on the 1064SG and 2064W their addresses are a reserved
+          hole and MACCESS has no zwidth field.*/
         case REG_DR0_Z32LSB:
+            if (!mga_chip[mystique->type].has_z32)
+                break;
             mystique->dwgreg.extended_dr[0] = (mystique->dwgreg.extended_dr[0] & ~0xFFFFFFFF) | val;
             mystique->dwgreg.dr[0] = (mystique->dwgreg.extended_dr[0] >> 16) & 0xFFFFFFFF;
             break;
 
         case REG_DR0_Z32MSB:
+            if (!mga_chip[mystique->type].has_z32)
+                break;
             mystique->dwgreg.extended_dr[0] = (mystique->dwgreg.extended_dr[0] & 0xFFFFFFFF) | ((val & 0xFFFFull) << 32ull);
             mystique->dwgreg.dr[0] = (mystique->dwgreg.extended_dr[0] >> 16) & 0xFFFFFFFF;
             break;
 
         case REG_DR2_Z32LSB:
+            if (!mga_chip[mystique->type].has_z32)
+                break;
             mystique->dwgreg.extended_dr[2] = (mystique->dwgreg.extended_dr[2] & ~0xFFFFFFFF) | val;
             mystique->dwgreg.dr[2] = (mystique->dwgreg.extended_dr[2] >> 16) & 0xFFFFFFFF;
             break;
 
         case REG_DR2_Z32MSB:
+            if (!mga_chip[mystique->type].has_z32)
+                break;
             mystique->dwgreg.extended_dr[2] = (mystique->dwgreg.extended_dr[2] & 0xFFFFFFFF) | ((val & 0xFFFFull) << 32ull);
             mystique->dwgreg.dr[2] = (mystique->dwgreg.extended_dr[2] >> 16) & 0xFFFFFFFF;
             break;
 
         case REG_DR3_Z32LSB:
+            if (!mga_chip[mystique->type].has_z32)
+                break;
             mystique->dwgreg.extended_dr[3] = (mystique->dwgreg.extended_dr[3] & ~0xFFFFFFFF) | val;
             mystique->dwgreg.dr[3] = (mystique->dwgreg.extended_dr[3] >> 16) & 0xFFFFFFFF;
             break;
 
         case REG_DR3_Z32MSB:
+            if (!mga_chip[mystique->type].has_z32)
+                break;
             mystique->dwgreg.extended_dr[3] = (mystique->dwgreg.extended_dr[3] & 0xFFFFFFFF) | ((val & 0xFFFFull) << 32ull);
             mystique->dwgreg.dr[3] = (mystique->dwgreg.extended_dr[3] >> 16) & 0xFFFFFFFF;
             break;
@@ -2785,7 +2809,8 @@ mystique_ctrl_write_l(uint32_t addr, uint32_t val, void *priv)
         return;
     }
 
-    if ((addr & 0x3e00) == 0x1c00 || (addr & 0x3e00) == 0x2c00) {
+    if ((addr & 0x3e00) == 0x1c00 ||
+        ((addr & 0x3e00) == 0x2c00 && mga_chip[mystique->type].has_dwgreg1)) {
         if ((addr & 0x300) == 0x100)
             mystique->blitter_submit_refcount++;
         mystique_queue(mystique, addr & 0x3fff, val, FIFO_WRITE_CTRL_LONG);
@@ -2843,6 +2868,10 @@ mystique_ctrl_write_l(uint32_t addr, uint32_t val, void *priv)
         case REG_DWG_INDIR_WT + 0x34:
         case REG_DWG_INDIR_WT + 0x38:
         case REG_DWG_INDIR_WT + 0x3c:
+            /*Reserved on the 2064W: the chip has no indirect write window.*/
+            if (!mga_chip[mystique->type].has_dmamap)
+                break;
+
             reg_addr = (mystique->dmamap[(addr >> 2) & 0xf] & 0x7f) << 2;
             if (mystique->dmamap[(addr >> 2) & 0xf] & 0x80)
                 reg_addr += 0x2c00;
@@ -3856,7 +3885,9 @@ blit_iload_iload(mystique_t *mystique, uint32_t data, int size)
     mystique->dwgreg.words++;
     switch (mystique->dwgreg.dwgctrl_running & DWGCTRL_ATYPE_MASK) {
         case DWGCTRL_ATYPE_RPL:
-            if (mystique->maccess_running & MACCESS_TLUTLOAD) {
+            /*tlutload is a reserved MACCESS bit with no effect on the 2064W:
+              that chip has no texture LUT to load.*/
+            if (mga_chip[mystique->type].has_tlutload && (mystique->maccess_running & MACCESS_TLUTLOAD)) {
                 while ((mystique->dwgreg.length_cur > 0) && (size >= 16)) {
                     uint16_t src = data & 0xffff;
 
@@ -6002,7 +6033,7 @@ blit_bitblt(mystique_t *mystique)
             break;
 
         case DWGCTRL_ATYPE_RPL:
-            if (mystique->maccess_running & MACCESS_TLUTLOAD) {
+            if (mga_chip[mystique->type].has_tlutload && (mystique->maccess_running & MACCESS_TLUTLOAD)) {
                 src_addr = mystique->dwgreg.ar[3];
 
                 y = mystique->dwgreg.ydst;
