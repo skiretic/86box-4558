@@ -736,6 +736,12 @@ static uint32_t mystique_readl_linear(uint32_t addr, void *priv);
 static void     mystique_writeb_linear(uint32_t addr, uint8_t val, void *priv);
 static void     mystique_writew_linear(uint32_t addr, uint16_t val, void *priv);
 static void     mystique_writel_linear(uint32_t addr, uint32_t val, void *priv);
+static uint8_t  mystique_readb_vga(uint32_t addr, void *priv);
+static uint16_t mystique_readw_vga(uint32_t addr, void *priv);
+static uint32_t mystique_readl_vga(uint32_t addr, void *priv);
+static void     mystique_writeb_vga(uint32_t addr, uint8_t val, void *priv);
+static void     mystique_writew_vga(uint32_t addr, uint16_t val, void *priv);
+static void     mystique_writel_vga(uint32_t addr, uint32_t val, void *priv);
 
 static void mystique_recalc_mapping(mystique_t *mystique);
 static int  mystique_line_compare(svga_t *svga);
@@ -1157,6 +1163,12 @@ mystique_recalctimings(svga_t *svga)
     }
 
     svga->fb_only       = svga->packed_chain4;
+    if (svga->fb_only)
+        mem_mapping_set_handler(&svga->mapping, mystique_readb_vga, mystique_readw_vga, mystique_readl_vga,
+                                mystique_writeb_vga, mystique_writew_vga, mystique_writel_vga);
+    else
+        mem_mapping_set_handler(&svga->mapping, svga->read, svga->readw, svga->readl,
+                                svga->write, svga->writew, svga->writel);
     svga->disable_blink = (svga->bpp > 4);
     video_force_resize_set_monitor(1, svga->monitor_index);
 #if 0
@@ -3096,6 +3108,83 @@ mystique_writel_linear(uint32_t addr, uint32_t val, void *priv)
     addr &= svga->vram_mask;
     svga->changedvram[addr >> 12]   = svga->monitor->mon_changeframecount;
     *(uint32_t *) &svga->vram[addr] = val;
+}
+
+/*In Power Graphic mode the VGA window reaches the frame buffer directly at the
+  CRTCEXT4 page; the VGA map mask and write logic do not apply. The 32k windows
+  are too small to be paged.*/
+static uint32_t
+mystique_vga_window_addr(const svga_t *svga, uint32_t addr, uint32_t bank)
+{
+    switch (svga->gdcreg[6] & 0x0c) {
+        case 0x0:
+            return (addr & 0x1ffff) + bank;
+        case 0x4:
+            return (addr & 0xffff) + bank;
+        default:
+            return addr & 0x7fff;
+    }
+}
+
+static uint8_t
+mystique_readb_vga(uint32_t addr, void *priv)
+{
+    const svga_t *svga = (svga_t *) priv;
+
+    cycles -= svga->monitor->mon_video_timing_read_b;
+
+    addr = mystique_vga_window_addr(svga, addr, svga->read_bank) & svga->decode_mask;
+    if (addr >= svga->vram_max)
+        return 0xff;
+
+    return svga->vram[addr & svga->vram_mask];
+}
+
+static uint16_t
+mystique_readw_vga(uint32_t addr, void *priv)
+{
+    const svga_t *svga = (svga_t *) priv;
+
+    return mystique_readw_linear(mystique_vga_window_addr(svga, addr, svga->read_bank), priv);
+}
+
+static uint32_t
+mystique_readl_vga(uint32_t addr, void *priv)
+{
+    const svga_t *svga = (svga_t *) priv;
+
+    return mystique_readl_linear(mystique_vga_window_addr(svga, addr, svga->read_bank), priv);
+}
+
+static void
+mystique_writeb_vga(uint32_t addr, uint8_t val, void *priv)
+{
+    svga_t *svga = (svga_t *) priv;
+
+    cycles -= svga->monitor->mon_video_timing_write_b;
+
+    addr = mystique_vga_window_addr(svga, addr, svga->write_bank) & svga->decode_mask;
+    if (addr >= svga->vram_max)
+        return;
+    addr &= svga->vram_mask;
+    svga->changedvram[addr >> 12] = svga->monitor->mon_changeframecount;
+    svga->vram[addr]              = val;
+}
+
+static void
+mystique_writew_vga(uint32_t addr, uint16_t val, void *priv)
+{
+    const svga_t *svga = (svga_t *) priv;
+
+    mystique_writew_linear(mystique_vga_window_addr(svga, addr, svga->write_bank), val, priv);
+}
+
+static void
+mystique_writel_vga(uint32_t addr, uint32_t val, void *priv)
+{
+    const svga_t *svga = (svga_t *) priv;
+
+    mystique_writel_linear(mystique_vga_window_addr(svga, addr, svga->write_bank), val, priv);
 }
 
 static void
