@@ -3972,8 +3972,14 @@ blit_iload_iload(mystique_t *mystique, uint32_t data, int size)
     uint8_t const       *trans     = &trans_masks[trans_sel][(mystique->dwgreg.selline & 3) * 4];
     /*An image load may carry a scanning direction of its own (G100 5-53).*/
     const int16_t        x_first   = mystique->dwgreg.sgn.scanleft ? mystique->dwgreg.fxright : mystique->dwgreg.fxleft;
-    const int16_t        x_last    = mystique->dwgreg.sgn.scanleft ? mystique->dwgreg.fxleft : mystique->dwgreg.fxright;
     const int            x_dir     = mystique->dwgreg.sgn.scanleft ? -1 : 1;
+    /*An XY image load ends each line after AR0 - AR3 + 1 source pixels (AR0 is
+      the line end source address); FXRIGHT only bounds the destination. A linear
+      one takes its line width from FXBNDRY.*/
+    const int32_t        src_w     = ((int32_t) ((mystique->dwgreg.ar[0] - mystique->dwgreg.ar[3]) << 14)) >> 14;
+    const int16_t        x_last    = (mystique->dwgreg.dwgctrl_running & DWGCTRL_LINEAR) ?
+                                         (mystique->dwgreg.sgn.scanleft ? mystique->dwgreg.fxleft : mystique->dwgreg.fxright) :
+                                         (int16_t) (x_first + x_dir * src_w);
     const int32_t        y_step    = mystique->dwgreg.sgn.sdy ? -(int32_t) (mystique->dwgreg.pitch & PITCH_MASK) : (int32_t) (mystique->dwgreg.pitch & PITCH_MASK);
     const int            sel_step  = mystique->dwgreg.sgn.sdy ? -1 : 1;
     uint32_t             data_mask = 1;
