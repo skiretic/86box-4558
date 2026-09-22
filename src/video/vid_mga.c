@@ -5959,7 +5959,10 @@ blit_texture_trap(mystique_t *mystique)
                                 {
                                     double threshold = bayer_mat[mystique->dwgreg.selline & 3][x_l & 3];
                                     double final_a_frac = (final_a) / 255.;
-                                    if (final_a_frac >= threshold) {
+                                    /*Stipple approximates blending, and alpha 0
+                                      blends to the destination unchanged: the
+                                      zero threshold cell must not pass it.*/
+                                    if (final_a_frac > threshold) {
                                         final_a = 255;
                                     } else {
                                         goto skip_pixel;
