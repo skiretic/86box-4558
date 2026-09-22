@@ -744,6 +744,7 @@ static void     mystique_writew_vga(uint32_t addr, uint16_t val, void *priv);
 static void     mystique_writel_vga(uint32_t addr, uint32_t val, void *priv);
 
 static void mystique_recalc_mapping(mystique_t *mystique);
+static void mystique_2064w_start_latch(mystique_t *mystique);
 static int  mystique_line_compare(svga_t *svga);
 
 static uint8_t  mystique_iload_read_b(uint32_t addr, void *priv);
@@ -799,8 +800,11 @@ mystique_out(uint16_t addr, uint8_t val, void *priv)
                 if ((svga->crtcreg & 0x3f) < 0xE || (svga->crtcreg & 0x3f) > 0x10) {
                     if (((svga->crtcreg & 0x3f) == 0xc) || ((svga->crtcreg & 0x3f) == 0xd)) {
                         svga->fullchange = 3;
-                        svga->memaddr_latch      = (((mystique->crtcext_regs[0] & CRTCX_R0_STARTADD_MASK) << 16) |
-                                                     (svga->crtc[0xc] << 8) | svga->crtc[0xd]) + ((svga->crtc[8] & 0x60) >> 5);
+                        if ((mystique->type == MGA_2064W) && (mystique->crtcext_regs[3] & CRTCX_R3_MGAMODE))
+                            mystique_2064w_start_latch(mystique);
+                        else
+                            svga->memaddr_latch = (((mystique->crtcext_regs[0] & CRTCX_R0_STARTADD_MASK) << 16) |
+                                                   (svga->crtc[0xc] << 8) | svga->crtc[0xd]) + ((svga->crtc[8] & 0x60) >> 5);
                     } else {
                         svga->fullchange = changeframecount;
                         svga_recalctimings(svga);
@@ -947,16 +951,26 @@ mystique_line_compare(svga_t *svga)
     return 0;
 }
 
+/*2064W Power Graphic mode: the start address is taken once per frame, so the
+  latch must always hold the full register value in scan-out units. There is no
+  preset row scan in this mode.*/
+static void
+mystique_2064w_start_latch(mystique_t *mystique)
+{
+    svga_t *svga = &mystique->svga;
+
+    svga->memaddr_latch = ((mystique->crtcext_regs[0] & CRTCX_R0_STARTADD_MASK) << 16) | (svga->crtc[0xc] << 8) | svga->crtc[0xd];
+    if (mystique->pci_regs[0x41] & (OPTION_INTERLEAVE >> 8))
+        svga->memaddr_latch <<= 1;
+}
+
 static void
 mystique_vblank_start(svga_t *svga)
 {
     mystique_t *mystique = (mystique_t *) svga->priv;
 
-    if (mystique->crtcext_regs[3] & CRTCX_R3_MGAMODE) {
-        svga->memaddr_latch      = ((mystique->crtcext_regs[0] & CRTCX_R0_STARTADD_MASK) << 16) | (svga->crtc[0xc] << 8) | svga->crtc[0xd];
-        if (mystique->pci_regs[0x41] & (OPTION_INTERLEAVE >> 8))
-            svga->memaddr_latch <<= 1;
-    }
+    if (mystique->crtcext_regs[3] & CRTCX_R3_MGAMODE)
+        mystique_2064w_start_latch(mystique);
 }
 
 static void
@@ -1047,7 +1061,9 @@ mystique_recalctimings(svga_t *svga)
         if (mystique->type != MGA_2164W && mystique->type != MGA_2064W)
             svga->lut_map = !!(mystique->xmiscctrl & XMISCCTRL_RAMCS);
 
-        if (mystique->type >= MGA_1064SG)
+        if (mystique->type == MGA_2064W)
+            mystique_2064w_start_latch(mystique);
+        else if (mystique->type >= MGA_1064SG)
             svga->memaddr_latch = ((mystique->crtcext_regs[0] & CRTCX_R0_STARTADD_MASK) << 16) | (svga->crtc[0xc] << 8) | svga->crtc[0xd];
 
         if ((mystique->pci_regs[0x41] & (OPTION_INTERLEAVE >> 8))) {
