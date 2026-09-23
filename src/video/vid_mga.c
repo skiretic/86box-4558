@@ -6897,6 +6897,10 @@ mystique_pci_read(UNUSED(int func), int addr, UNUSED(int len), void *priv)
                 ret = 0;
                 break; /*Programming interface*/
 
+            case 0x0d:
+                ret = (mystique->type == MGA_1164SG) ? 0x00 : mystique->pci_regs[0x0d];
+                break; /*Latency timer*/
+
             case 0x0a:
                 ret = 0x00;
                 break; /*Supports VGA interface*/
@@ -7099,7 +7103,9 @@ mystique_pci_write(UNUSED(int func), int addr, UNUSED(int len), uint8_t val, voi
             break;
 
         case 0x0d:
-            mystique->pci_regs[0x0d] = val;
+            /* latentim <15:11>; the 2064W HEADER is read-only 0. */
+            if (mystique->type != MGA_2064W)
+                mystique->pci_regs[0x0d] = val & 0xf8;
             break;
 
         case 0x11:
