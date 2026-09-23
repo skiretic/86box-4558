@@ -6888,7 +6888,7 @@ mystique_pci_read(UNUSED(int func), int addr, UNUSED(int len), void *priv)
                 break;
             case 0x07:
                 ret = mystique->pci_regs[0x07];
-                break; /*Fast DEVSEL timing*/
+                break; /*Medium DEVSEL timing*/
 
             case 0x08:
                 ret = (mystique->type == MGA_1164SG) ? 3 : 0;
@@ -7389,7 +7389,7 @@ mystique_init(const device_t *info)
     else
         pci_add_card((info->flags & DEVICE_AGP) ? PCI_ADD_AGP : PCI_ADD_NORMAL, mystique_pci_read, mystique_pci_write, mystique, &mystique->pci_slot);
     mystique->pci_regs[0x06] = 0x80;
-    mystique->pci_regs[0x07] = 0 << 1;
+    mystique->pci_regs[0x07] = 1 << 1; /* devseltim = 01, medium */
     mystique->pci_regs[0x2c] = mystique->bios_rom.rom[0x7ff8];
     mystique->pci_regs[0x2d] = mystique->bios_rom.rom[0x7ff9];
     mystique->pci_regs[0x2e] = mystique->bios_rom.rom[0x7ffa];
