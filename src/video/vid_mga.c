@@ -2268,6 +2268,31 @@ mystique_accel_ctrl_write_b(uint32_t addr, uint8_t val, void *priv)
         mystique_start_blit(mystique);
 }
 
+/* Any access that writes PRIMEND, byte, word or dword, starts the primary channel. */
+static void
+mystique_primend_write(mystique_t *mystique, uint32_t val)
+{
+    thread_wait_mutex(mystique->dma.lock);
+    mystique->dma.primend = val & DMA_ADDR_MASK;
+    /* A trap the FIFO thread has run but the guest has not seen yet: the chip would
+       have interrupted the CPU before this write, so it reached the chip ahead of the
+       trap and only extends the list. Restarting here would run the entry after the
+       trap before the handler sees the channel stopped at it. */
+    if (mystique->softrap_pending) {
+        thread_release_mutex(mystique->dma.lock);
+        mystique_softrap_apply(mystique);
+        return;
+    }
+    if (mga_chip[mystique->type].has_busmaster && mystique->dma.state == MGA_DMA_STATE_IDLE && (mystique->dma.primaddress & DMA_ADDR_MASK) != (mystique->dma.primend & DMA_ADDR_MASK)) {
+        mystique->endprdmasts_pending = 0;
+        mystique->status &= ~STATUS_ENDPRDMASTS;
+
+        mystique->dma.state = MGA_DMA_STATE_PRI;
+        wake_fifo_thread(mystique);
+    }
+    thread_release_mutex(mystique->dma.lock);
+}
+
 static void
 mystique_ctrl_write_b(uint32_t addr, uint8_t val, void *priv)
 {
@@ -2377,6 +2402,17 @@ mystique_ctrl_write_b(uint32_t addr, uint8_t val, void *priv)
             mystique->dma.state = MGA_DMA_STATE_IDLE;
             thread_release_mutex(mystique->dma.lock);
             break;
+
+        case REG_PRIMEND:
+        case REG_PRIMEND + 1:
+        case REG_PRIMEND + 2:
+        case REG_PRIMEND + 3: {
+            int      shift  = (addr & 3) * 8;
+            uint32_t merged = (mystique->dma.primend & ~(0xffu << shift)) | ((uint32_t) val << shift);
+
+            mystique_primend_write(mystique, merged);
+            break;
+        }
 
         case REG_DMAMAP:
         case REG_DMAMAP + 0x1:
@@ -2943,27 +2979,7 @@ mystique_ctrl_write_l(uint32_t addr, uint32_t val, void *priv)
 
     switch (addr & 0x3ffc) {
         case REG_PRIMEND:
-            thread_wait_mutex(mystique->dma.lock);
-            mystique->dma.primend = val & DMA_ADDR_MASK;
-            /* A trap the FIFO thread has run but the guest has not seen yet: the chip would
-               have interrupted the CPU before this write, so it reached the chip ahead of the
-               trap and only extends the list. Restarting here would run the entry after the
-               trap before the handler sees the channel stopped at it. */
-            if (mystique->softrap_pending) {
-                thread_release_mutex(mystique->dma.lock);
-                mystique_softrap_apply(mystique);
-                break;
-            }
-            //pclog("PRIMADDRESS = 0x%08X, PRIMEND = 0x%08X\n", mystique->dma.primaddress, mystique->dma.primend);
-            if (mga_chip[mystique->type].has_busmaster && mystique->dma.state == MGA_DMA_STATE_IDLE && (mystique->dma.primaddress & DMA_ADDR_MASK) != (mystique->dma.primend & DMA_ADDR_MASK)) {
-                mystique->endprdmasts_pending = 0;
-                mystique->status &= ~STATUS_ENDPRDMASTS;
-
-                mystique->dma.state     = MGA_DMA_STATE_PRI;
-                //mystique->dma.pri_state = 0;
-                wake_fifo_thread(mystique);
-            }
-            thread_release_mutex(mystique->dma.lock);
+            mystique_primend_write(mystique, val);
             break;
 
         case REG_DWG_INDIR_WT:
