@@ -2895,7 +2895,7 @@ mystique_ctrl_write_l(uint32_t addr, uint32_t val, void *priv)
     switch (addr & 0x3ffc) {
         case REG_PRIMEND:
             thread_wait_mutex(mystique->dma.lock);
-            mystique->dma.primend = val;
+            mystique->dma.primend = val & DMA_ADDR_MASK;
             /* A trap the FIFO thread has run but the guest has not seen yet: the chip would
                have interrupted the CPU before this write, so it reached the chip ahead of the
                trap and only extends the list. Restarting here would run the entry after the
