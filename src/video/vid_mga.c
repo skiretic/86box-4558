@@ -7097,7 +7097,7 @@ mystique_pci_write(UNUSED(int func), int addr, UNUSED(int len), uint8_t val, voi
 
     switch (addr) {
         case PCI_REG_COMMAND:
-            mystique->pci_regs[PCI_REG_COMMAND] = (val & 0x27) | 0x80;
+            mystique->pci_regs[PCI_REG_COMMAND] = (val & (mga_chip[mystique->type].has_busmaster ? 0x27 : 0x23)) | 0x80;
             mystique_recalc_mapping(mystique);
             break;
 
