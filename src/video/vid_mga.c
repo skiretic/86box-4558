@@ -7137,11 +7137,18 @@ mystique_pci_write(UNUSED(int func), int addr, UNUSED(int len), uint8_t val, voi
             }
             break;
 
+        /*MGABASE3 is 1064SG and later; the 2064W has only DMAWIN in the
+          control aperture and reserves 18h-2Fh, so the base stays 0 and
+          reads back 0.*/
         case 0x1a:
+            if (mystique->type == MGA_2064W)
+                break;
             mystique->iload_base = (mystique->iload_base & 0xff000000) | ((val & 0x80) << 16);
             mystique_recalc_mapping(mystique);
             break;
         case 0x1b:
+            if (mystique->type == MGA_2064W)
+                break;
             mystique->iload_base = (mystique->iload_base & 0x00800000) | (val << 24);
             mystique_recalc_mapping(mystique);
             break;
