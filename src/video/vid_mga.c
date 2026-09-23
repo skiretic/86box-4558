@@ -6905,8 +6905,8 @@ mystique_pci_read(UNUSED(int func), int addr, UNUSED(int len), void *priv)
                 break;
 
             case 0x10:
-                ret = 0x00;
-                break; /*Control aperture for Millennium and Mystique, LFB for Mystique 220 and later*/
+                ret = (mystique->type >= MGA_2164W) ? 0x08 : 0x00;
+                break; /*Control aperture for Millennium and Mystique, LFB for Mystique 220 and later; the LFB is prefetchable*/
             case 0x11:
                 if (mystique->type >= MGA_1164SG)
                     ret = 0x00;
@@ -6927,7 +6927,7 @@ mystique_pci_read(UNUSED(int func), int addr, UNUSED(int len), void *priv)
                 break;
 
             case 0x14:
-                ret = 0x00;
+                ret = (mystique->type < MGA_1164SG) ? 0x08 : 0x00;
                 break; /*LFB for Millennium and Mystique, Control aperture for Mystique 220 and later*/
             case 0x15:
                 if (mystique->type >= MGA_1164SG)
