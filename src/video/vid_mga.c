@@ -2298,7 +2298,8 @@ mystique_primend_write(mystique_t *mystique, uint32_t val)
         mystique_softrap_apply(mystique);
         return;
     }
-    if (mga_chip[mystique->type].has_busmaster && mystique->dma.state == MGA_DMA_STATE_IDLE && (mystique->dma.primaddress & DMA_ADDR_MASK) != (mystique->dma.primend & DMA_ADDR_MASK)) {
+    /* With DEVCTRL busmaster clear the chip does not master the bus at all. */
+    if (mga_chip[mystique->type].has_busmaster && (mystique->pci_regs[PCI_REG_COMMAND] & PCI_COMMAND_L_BM) && mystique->dma.state == MGA_DMA_STATE_IDLE && (mystique->dma.primaddress & DMA_ADDR_MASK) != (mystique->dma.primend & DMA_ADDR_MASK)) {
         mystique->endprdmasts_pending = 0;
         mystique->status &= ~STATUS_ENDPRDMASTS;
 
