@@ -371,11 +371,14 @@
 #define STATUS_VLINEPEN               (1 << 5)
 #define STATUS_DWGENGSTS              (1 << 16)
 #define STATUS_ENDPRDMASTS            (1 << 17)
+/*The 2064W has no bus mastering: STATUS and IEN lack the soft trap and DMA bits.*/
+#define STATUS_2064W_MASK             0x0001007c
 
 #define ICLEAR_SOFTRAPICLR            (1 << 0)
 #define ICLEAR_VLINEICLR              (1 << 5)
 
 #define IEN_SOFTRAPEN                 (1 << 0)
+#define IEN_MASK(m)                   (((m)->type == MGA_2064W) ? 0x64 : 0x65)
 
 #define ALPHACTRL_ASTIPPLE            (1 << 11)
 
@@ -1704,9 +1707,13 @@ mystique_ctrl_read_b(uint32_t addr, void *priv)
                 ret = mystique->status & 0xff;
                 if (svga->cgastat & 8)
                     ret |= REG_STATUS_VSYNCSTS;
+                if (mystique->type == MGA_2064W)
+                    ret &= STATUS_2064W_MASK & 0xff;
                 break;
             case REG_STATUS + 1:
                 ret = (mystique->status >> 8) & 0xff;
+                if (mystique->type == MGA_2064W)
+                    ret &= (STATUS_2064W_MASK >> 8) & 0xff;
                 break;
             case REG_STATUS + 2:
                 if (!mystique->status_read_l)
@@ -1715,13 +1722,17 @@ mystique_ctrl_read_b(uint32_t addr, void *priv)
                 if (mystique->busy || ((mystique->blitter_submit_refcount + mystique->blitter_submit_dma_refcount) != mystique->blitter_complete_refcount) || !FIFO_EMPTY
                 || mystique->dma.state != MGA_DMA_STATE_IDLE || mystique->softrap_pending || mystique->endprdmasts_pending)
                     ret |= (STATUS_DWGENGSTS >> 16);
+                if (mystique->type == MGA_2064W)
+                    ret &= (STATUS_2064W_MASK >> 16) & 0xff;
                 break;
             case REG_STATUS + 3:
                 ret = (mystique->status >> 24) & 0xff;
+                if (mystique->type == MGA_2064W)
+                    ret &= (STATUS_2064W_MASK >> 24) & 0xff;
                 break;
 
             case REG_IEN:
-                ret = mystique->ien & 0x65;
+                ret = mystique->ien & IEN_MASK(mystique);
                 break;
             case REG_IEN + 1:
             case REG_IEN + 2:
@@ -2370,7 +2381,7 @@ mystique_ctrl_write_b(uint32_t addr, uint8_t val, void *priv)
             break;
 
         case REG_IEN:
-            mystique->ien = val & 0x65;
+            mystique->ien = val & IEN_MASK(mystique);
             break;
         case REG_IEN + 1:
         case REG_IEN + 2:
