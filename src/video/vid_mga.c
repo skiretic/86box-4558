@@ -506,6 +506,7 @@ typedef struct mystique_t {
         xmiscctrl, xpixclkctrl,
         xvrefctrl, ien, dmamod,
         dmadatasiz, dirdatasiz, rst,
+        list_write, /*run_dma is writing a register from a display list*/
         xcolkeymskl, xcolkeymskh,
         xcolkeyl, xcolkeyh,
         xcrcbitsel;
@@ -2136,6 +2137,9 @@ mystique_accel_ctrl_write_b(uint32_t addr, uint8_t val, void *priv)
         case REG_SECADDRESS + 1:
         case REG_SECADDRESS + 2:
         case REG_SECADDRESS + 3:
+            /* Written only from a display list; a direct write has no effect. */
+            if (!mystique->list_write)
+                break;
             WRITE8(addr, mystique->dma.secaddress, val);
             mystique->dma.sec_state = 0;
             break;
@@ -2901,6 +2905,9 @@ mystique_accel_ctrl_write_l(uint32_t addr, uint32_t val, void *priv)
             break;
 
         case REG_SECEND:
+            /* Written only from a display list; a direct write has no effect. */
+            if (!mystique->list_write)
+                break;
             mystique->dma.secend = val;
             /*The 2064W is not a bus master: no list channel runs on it and no
               soft trap is taken, so neither status bit can ever be set there.*/
@@ -3349,7 +3356,9 @@ run_dma(mystique_t *mystique)
                                 mystique->blitter_submit_dma_refcount++;
 
                             //pclog("DMA value: 0x%08X to reg 0x%04X\n", val, reg_addr);
+                            mystique->list_write = 1;
                             mystique_accel_ctrl_write_l(reg_addr, val, mystique);
+                            mystique->list_write = 0;
                             if (reg_addr == REG_SOFTRAP) {
                                 mystique->dma.primaddress += 4;
                                 break;
@@ -3430,7 +3439,9 @@ run_dma(mystique_t *mystique)
                         if ((reg_addr & 0x300) == 0x100)
                             mystique->blitter_submit_dma_refcount++;
 
+                        mystique->list_write = 1;
                         mystique_accel_ctrl_write_l(reg_addr, val, mystique);
+                        mystique->list_write = 0;
                         //pclog("DMA value (secondary): 0x%08X\n", val);
                         mystique->dma.sec_header >>= 8;
                         mystique->dma.sec_state = (mystique->dma.sec_state + 1) & 3;
