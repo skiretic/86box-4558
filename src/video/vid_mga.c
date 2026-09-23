@@ -502,7 +502,7 @@ typedef struct mystique_t {
         xmulctrl, xgenctrl,
         xmiscctrl, xpixclkctrl,
         xvrefctrl, ien, dmamod,
-        dmadatasiz, dirdatasiz,
+        dmadatasiz, dirdatasiz, rst,
         xcolkeymskl, xcolkeymskh,
         xcolkeyl, xcolkeyh,
         xcrcbitsel;
@@ -1757,6 +1757,52 @@ mystique_ctrl_read_b(uint32_t addr, void *priv)
             case REG_SECADDRESS + 3:
                 READ8(addr, mystique->dma.secaddress);
                 break;
+            case REG_SECEND:
+            case REG_SECEND + 1:
+            case REG_SECEND + 2:
+            case REG_SECEND + 3:
+                /* secend <31:2>, sagpxfer <1>; bit 0 is reserved. */
+                if (mga_chip[mystique->type].has_busmaster)
+                    READ8(addr, mystique->dma.secend & ~1u);
+                break;
+
+            case REG_DMAMAP:
+            case REG_DMAMAP + 0x1:
+            case REG_DMAMAP + 0x2:
+            case REG_DMAMAP + 0x3:
+            case REG_DMAMAP + 0x4:
+            case REG_DMAMAP + 0x5:
+            case REG_DMAMAP + 0x6:
+            case REG_DMAMAP + 0x7:
+            case REG_DMAMAP + 0x8:
+            case REG_DMAMAP + 0x9:
+            case REG_DMAMAP + 0xa:
+            case REG_DMAMAP + 0xb:
+            case REG_DMAMAP + 0xc:
+            case REG_DMAMAP + 0xd:
+            case REG_DMAMAP + 0xe:
+            case REG_DMAMAP + 0xf:
+                if (mga_chip[mystique->type].has_dmamap)
+                    ret = mystique->dmamap[addr & 0xf];
+                break;
+
+            case REG_RST:
+                ret = mystique->rst;
+                break;
+            case REG_RST + 1:
+            case REG_RST + 2:
+            case REG_RST + 3:
+                ret = 0;
+                break;
+
+            case REG_CURPOSX:
+            case REG_CURPOSX + 1:
+                READ8(addr, mystique->cursor.pos_x & 0x0fff);
+                break;
+            case REG_CURPOSY:
+            case REG_CURPOSY + 1:
+                READ8(addr & 1, mystique->cursor.pos_y & 0x0fff);
+                break;
 
             case REG_VCOUNT:
             case REG_VCOUNT + 1:
@@ -2357,6 +2403,9 @@ mystique_ctrl_write_b(uint32_t addr, uint8_t val, void *priv)
         case REG_RST + 1:
         case REG_RST + 2:
         case REG_RST + 3:
+            /* softreset <0>; the G100 adds softextrst <1>. */
+            if ((addr & 0x3fff) == REG_RST)
+                mystique->rst = val & ((mystique->type == MGA_G100) ? 0x03 : 0x01);
             wait_fifo_idle(mystique);
             mystique->busy                        = 0;
             mystique->blitter_submit_refcount     = 0;
