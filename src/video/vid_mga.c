@@ -6846,6 +6846,18 @@ mystique_tvp3026_gpio_write(uint8_t cntl, uint8_t data, void *priv)
     i2c_gpio_set(mystique->i2c_ddc, !(cntl & 0x10) || (data & 0x10), !(cntl & 0x04) || (data & 0x04));
 }
 
+/* The PM block exists only on the G100 (both bus parts), the AGP block only on the
+   AGP parts; elsewhere those locations are reserved: reads give 0, writes are dropped. */
+static int
+mystique_pci_cap_decoded(const mystique_t *mystique, int addr)
+{
+    if ((addr >= 0xdc) && (addr <= 0xe3))
+        return mystique->type == MGA_G100;
+    if ((addr >= 0xf0) && (addr <= 0xfb))
+        return mystique->is_agp;
+    return 1;
+}
+
 static uint8_t
 mystique_pci_read(UNUSED(int func), int addr, UNUSED(int len), void *priv)
 {
@@ -6853,6 +6865,8 @@ mystique_pci_read(UNUSED(int func), int addr, UNUSED(int len), void *priv)
     uint8_t     ret      = 0x00;
 
     if ((addr >= 0x30) && (addr <= 0x33) && !(mystique->pci_regs[0x43] & 0x40))
+        ret = 0x00;
+    else if (!mystique_pci_cap_decoded(mystique, addr))
         ret = 0x00;
     else
         switch (addr) {
@@ -7099,6 +7113,9 @@ static void
 mystique_pci_write(UNUSED(int func), int addr, UNUSED(int len), uint8_t val, void *priv)
 {
     mystique_t *mystique = (mystique_t *) priv;
+
+    if (!mystique_pci_cap_decoded(mystique, addr))
+        return;
 
     switch (addr) {
         case PCI_REG_COMMAND:
