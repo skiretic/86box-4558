@@ -5082,7 +5082,7 @@ blit_line(mystique_t *mystique, int closed, int autoline)
         case DWGCTRL_ATYPE_I:
         case DWGCTRL_ATYPE_ZI:
             z_write = ((mystique->dwgreg.dwgctrl_running & DWGCTRL_ATYPE_MASK) == DWGCTRL_ATYPE_ZI);
-            while (mystique->dwgreg.length > 0) {
+            while (closed ? (mystique->dwgreg.length >= 0) : (mystique->dwgreg.length > 0)) {
                 if (x >= mystique->dwgreg.cxleft && x <= mystique->dwgreg.cxright && mystique->dwgreg.ydst_lin >= mystique->dwgreg.ytop && mystique->dwgreg.ydst_lin <= mystique->dwgreg.ybot) {
                     bool z_check_pass = false;
                     if (mystique->maccess_running & MACCESS_ZWIDTH) {
@@ -5174,6 +5174,10 @@ blit_line(mystique_t *mystique, int closed, int autoline)
                         }
                     }
                 }
+
+                /* Only a closed line gets here with length 0: its last pixel is drawn. */
+                if (!mystique->dwgreg.length)
+                    break;
 
                 if (mystique->dwgreg.sgn.sdydxl)
                     x += (mystique->dwgreg.sgn.sdxl ? -1 : 1);
