@@ -1004,6 +1004,26 @@ mystique_getclock(int clock, void *priv)
     return fo;
 }
 
+/*svga_render_blank sizes its line in character clocks; in Power Graphic mode
+  hdisp is already in pixels.*/
+static void
+mystique_render_blank(svga_t *svga)
+{
+    const int y = svga->displine + svga->y_add;
+
+    if ((y < 0) || (y >= 2048) || (svga->monitor->target_buffer == NULL) || (svga->monitor->target_buffer->line[y] == NULL))
+        return;
+
+    if (svga->firstline_draw == 2000)
+        svga->firstline_draw = svga->displine;
+    svga->lastline_draw = svga->displine;
+
+    if (svga->x_add < 0)
+        memset(&svga->monitor->target_buffer->line[y][0], 0, (svga->hdisp - svga->x_add) * sizeof(uint32_t));
+    else
+        memset(&svga->monitor->target_buffer->line[y][svga->x_add], 0, svga->hdisp * sizeof(uint32_t));
+}
+
 void
 mystique_recalctimings(svga_t *svga)
 {
@@ -1164,6 +1184,9 @@ mystique_recalctimings(svga_t *svga)
                     break;
             }
         }
+        /*scroff and crtcrstN are VGA/MGA fields: a driver blanks its mode set with them.*/
+        if (svga->scrblank || !(svga->crtc[0x17] & 0x80))
+            svga->render = mystique_render_blank;
         svga->packed_chain4 = 1;
         svga->line_compare = mystique_line_compare;
         if (mystique->type < MGA_1064SG)
