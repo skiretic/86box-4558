@@ -7390,6 +7390,7 @@ mystique_init(const device_t *info)
         pci_add_card((info->flags & DEVICE_AGP) ? PCI_ADD_AGP : PCI_ADD_NORMAL, mystique_pci_read, mystique_pci_write, mystique, &mystique->pci_slot);
     mystique->pci_regs[0x06] = 0x80;
     mystique->pci_regs[0x07] = 1 << 1; /* devseltim = 01, medium */
+    mystique->int_line       = 0xff;   /* unknown / no connection until configured */
     mystique->pci_regs[0x2c] = mystique->bios_rom.rom[0x7ff8];
     mystique->pci_regs[0x2d] = mystique->bios_rom.rom[0x7ff9];
     mystique->pci_regs[0x2e] = mystique->bios_rom.rom[0x7ffa];
