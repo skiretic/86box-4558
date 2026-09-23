@@ -6891,7 +6891,10 @@ mystique_pci_read(UNUSED(int func), int addr, UNUSED(int len), void *priv)
                 break; /*Medium DEVSEL timing*/
 
             case 0x08:
-                ret = (mystique->type == MGA_1164SG) ? 3 : 0;
+                if (mystique->type == MGA_1164SG)
+                    ret = 3;
+                else
+                    ret = (mystique->type == MGA_2064W) ? 1 : 0;
                 break; /*Revision ID*/
             case 0x09:
                 ret = 0;
