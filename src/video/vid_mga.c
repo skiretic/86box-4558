@@ -5630,22 +5630,23 @@ persp_correct(mystique_t* mystique, int* s, int* t, int* q, double* s_frac, doub
     double t_d = ((*t) >> t_shift);
     double q_d = FixedToFloat(*q);
 
-    double throwaway1 = 0;
-    double throwaway2 = 0;
     if (q_d == 0.0)
         q_d = INFINITY;
 
     s_d *= 1. / q_d;
     t_d *= 1. / q_d;
 
-    *s_frac = fabs(modf(s_d, &throwaway1));
-    *t_frac = fabs(modf(t_d, &throwaway2));
+    /*Floor, not truncation: a coordinate in (-1, 0) is texel -1, so repeat
+      mode stays periodic across zero and bilinear blends toward +1 with the
+      positive fraction, as the non-perspective path's arithmetic shift does.*/
+    const double s_fl = floor(s_d);
+    const double t_fl = floor(t_d);
 
-    (void)throwaway1;
-    (void)throwaway2;
+    *s_frac = s_d - s_fl;
+    *t_frac = t_d - t_fl;
 
-    *s = s_d;
-    *t = t_d;
+    *s = s_fl;
+    *t = t_fl;
 }
 
 static int
