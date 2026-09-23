@@ -6992,7 +6992,11 @@ mystique_pci_read(UNUSED(int func), int addr, UNUSED(int len), void *priv)
                 break;
 
             case 0x34:
-                ret = mystique->is_agp ? 0xdc : 0x00;
+                /* The G100 lists PM (DCh) then AGP (F0h); the 2164W has only AGP. */
+                if (mystique->is_agp)
+                    ret = (mystique->type == MGA_G100) ? 0xdc : 0xf0;
+                else
+                    ret = 0x00;
                 break;
 
             case 0x3c:
