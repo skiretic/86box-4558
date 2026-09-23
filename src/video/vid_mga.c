@@ -7063,16 +7063,17 @@ mystique_pci_read(UNUSED(int func), int addr, UNUSED(int len), void *priv)
                 ret = 0x10;
                 break;
 
+            /* AGP_STS: the G100 does 1x with sideband and a 2-deep queue; the 2164W reports none. */
             case 0xf4:
-                ret = 0x1;
+                ret = (mystique->type == MGA_G100) ? 0x01 : 0x00;
                 break;
 
             case 0xf5:
-                ret = 0x2;
+                ret = (mystique->type == MGA_G100) ? 0x02 : 0x00;
                 break;
 
             case 0xf7:
-                ret = 0x1;
+                ret = (mystique->type == MGA_G100) ? 0x01 : 0x00;
                 break;
 
             case 0xf8:
