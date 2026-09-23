@@ -7044,7 +7044,7 @@ mystique_pci_read(UNUSED(int func), int addr, UNUSED(int len), void *priv)
 
             /* No support for turning off the video adapter yet. */
             case 0xe0:
-                ret = 0x0;
+                ret = mystique->pci_regs[0xe0] & 0x03;
                 break;
 
             case 0xf0:
@@ -7249,6 +7249,11 @@ mystique_pci_write(UNUSED(int func), int addr, UNUSED(int len), uint8_t val, voi
             pclog("mystique_ctrl_write_b(%04X, %02X)\n", addr, val);
 #endif
             mystique_ctrl_write_b(addr, val, mystique);
+            break;
+
+        case 0xe0:
+            if (mystique->type == MGA_G100)
+                mystique->pci_regs[0xe0] = val & 0x03;
             break;
 
         case 0xf8:
