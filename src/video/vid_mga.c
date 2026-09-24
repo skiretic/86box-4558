@@ -7585,6 +7585,8 @@ mystique_init(const device_t *info)
                   mystique_in, mystique_out,
                   mystique_hwcursor_draw,
                   NULL);
+        /*The integrated DAC's cursor map is 64 x 64.*/
+        mystique->svga.hwcursor.cur_xsize = mystique->svga.hwcursor.cur_ysize = 64;
         mystique->svga.clock_gen = mystique;
         mystique->svga.getclock  = mystique_getclock;
         if (mystique->type == MGA_G100)
