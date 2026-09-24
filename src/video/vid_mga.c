@@ -4254,6 +4254,10 @@ blit_iload_iload(mystique_t *mystique, uint32_t data, int size)
                                 mystique->blitter_complete_refcount++;
                                 break;
                             }
+                            /*Only an xy source is padded at each line end; a linear
+                              one is padded once, at the end of the source.*/
+                            if (mystique->dwgreg.dwgctrl_running & DWGCTRL_LINEAR)
+                                continue;
                             data64 = 0;
                             size   = 0;
                             break;
