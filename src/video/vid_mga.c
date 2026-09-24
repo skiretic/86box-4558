@@ -943,6 +943,8 @@ mystique_in(uint16_t addr, void *priv)
                 temp = svga->attrff ? 0x80 : 0x00;
             else if (svga->crtcreg == 0x26) /* attribute address and palette enable */
                 temp = (svga->attraddr & 0x1f) | (svga->attr_palette_enable & 0x20);
+            else if ((svga->crtcreg == 0x22) && !svga->readmode) /* CPU data latch, rdmapsl plane */
+                temp = svga->latch.b[svga->readplane & 3];
             else
                 temp = svga->crtc[svga->crtcreg & 0x3f];
             break;
