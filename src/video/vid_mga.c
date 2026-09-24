@@ -5389,6 +5389,9 @@ blit_trap(mystique_t *mystique)
 
                 mystique->dwgreg.selline = (mystique->dwgreg.selline + 1) & 7;
             }
+            /* The edges continue into the next primitive from where this one ended. */
+            mystique->dwgreg.ar[1] = err_l;
+            mystique->dwgreg.ar[4] = err_r;
             break;
 
         case DWGCTRL_ATYPE_RSTR:
@@ -5473,6 +5476,8 @@ blit_trap(mystique_t *mystique)
 
                 mystique->dwgreg.selline = (mystique->dwgreg.selline + 1) & 7;
             }
+            mystique->dwgreg.ar[1] = err_l;
+            mystique->dwgreg.ar[4] = err_r;
             break;
 
         case DWGCTRL_ATYPE_I:
