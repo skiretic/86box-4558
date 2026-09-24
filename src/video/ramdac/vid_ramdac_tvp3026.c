@@ -37,6 +37,7 @@ typedef struct tvp3026_ramdac_t {
     uint8_t  dcc;
     uint8_t  dc_init;
     uint8_t  ccr;
+    uint8_t  cram_hi;
     uint8_t  true_color;
     uint8_t  latch_cntl;
     uint8_t  mcr;
@@ -148,6 +149,10 @@ tvp3026_ramdac_out(uint16_t addr, int rs2, int rs3, uint8_t val, void *priv, svg
             svga->dac_addr   = val;
             if (svga->dac_status)
                 svga->dac_addr = (svga->dac_addr + 1) & da_mask;
+            /*The cursor RAM counter takes A9:A8 from CCR3:2 at this write,
+              not at each data access.*/
+            if ((rs == 0x00) || (rs == 0x03))
+                ramdac->cram_hi = (ramdac->ccr >> 2) & 0x03;
             break;
         case 0x01: /* Palette Data Register (RS value = 0001) */
         case 0x02: /* Pixel Read Mask Register (RS value = 0010) */
@@ -319,10 +324,12 @@ tvp3026_ramdac_out(uint16_t addr, int rs2, int rs3, uint8_t val, void *priv, svg
             }
             break;
         case 0x0b: /* Cursor RAM Data Register (RS value = 1011) */
-            index          = (svga->dac_addr & da_mask) | ((ramdac->ccr & 0x0c) << 6);
+            index          = (ramdac->cram_hi << 8) | (svga->dac_addr & 0xff);
             cd             = (uint8_t *) ramdac->cursor64_data;
             cd[index]      = val;
-            svga->dac_addr = (svga->dac_addr + 1) & da_mask;
+            svga->dac_addr = (svga->dac_addr + 1) & 0xff;
+            if (!svga->dac_addr)
+                ramdac->cram_hi = (ramdac->cram_hi + 1) & 0x03;
             break;
         case 0x0c: /* Cursor X Low Register (RS value = 1100) */
             ramdac->hwc_x        = (ramdac->hwc_x & 0x0f00) | val;
@@ -356,7 +363,6 @@ tvp3026_ramdac_in(uint16_t addr, int rs2, int rs3, void *priv, svga_t *svga)
     const uint8_t    *cd;
     uint16_t          index;
     uint8_t           rs      = (addr & 0x03);
-    uint16_t          da_mask = 0x03ff;
     rs |= (!!rs2 << 2);
     rs |= (!!rs3 << 3);
 
@@ -516,11 +522,13 @@ tvp3026_ramdac_in(uint16_t addr, int rs2, int rs3, void *priv, svga_t *svga)
             }
             break;
         case 0x0b: /* Cursor RAM Data Register (RS value = 1011) */
-            index = ((svga->dac_addr - 1) & da_mask) | ((ramdac->ccr & 0x0c) << 6);
+            index = (ramdac->cram_hi << 8) | ((svga->dac_addr - 1) & 0xff);
             cd    = (uint8_t *) ramdac->cursor64_data;
             temp  = cd[index];
 
-            svga->dac_addr = (svga->dac_addr + 1) & da_mask;
+            svga->dac_addr = (svga->dac_addr + 1) & 0xff;
+            if (!((svga->dac_addr - 1) & 0xff))
+                ramdac->cram_hi = (ramdac->cram_hi + 1) & 0x03;
             break;
         case 0x0c: /* Cursor X Low Register (RS value = 1100) */
             temp = ramdac->hwc_x & 0xff;
