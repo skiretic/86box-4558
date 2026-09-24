@@ -4826,6 +4826,53 @@ blit_iload_iload_high(mystique_t *mystique, uint32_t data, int size)
             src_bits = 32;
             break;
 
+        case DWGCTRL_BLTMOD_BU32RGB:
+            /*32-bit A: red <23:16>, blue <7:0>, one source pixel per dword.*/
+            r = ((data >> 16) & 0xff);
+            g = ((data >> 8) & 0xff);
+            b = (data & 0xff);
+
+            next_r = r;
+            next_g = g;
+            next_b = b;
+
+            size     = 32;
+            src_bits = 32;
+            break;
+
+        case DWGCTRL_BLTMOD_BU24RGB:
+        case DWGCTRL_BLTMOD_BU24BGR:
+        {
+            /*Packed 24-bit pixels: one or two complete ones per dword, and a partial
+              one waits for the next dword. 24-bit B holds red in the low byte.*/
+            const int bgr  = (mystique->dwgreg.dwgctrl_running & DWGCTRL_BLTMOD_MASK) == DWGCTRL_BLTMOD_BU24BGR;
+            uint64_t  src  = mystique->dwgreg.iload_rem_data | ((uint64_t) data << mystique->dwgreg.iload_rem_count);
+            int       bits = mystique->dwgreg.iload_rem_count + 32;
+            uint32_t  pix[2];
+            int       n = 0;
+
+            while (bits >= 24) {
+                pix[n++] = src & 0xffffff;
+                src >>= 24;
+                bits -= 24;
+            }
+            mystique->dwgreg.iload_rem_data  = (uint32_t) src;
+            mystique->dwgreg.iload_rem_count = bits;
+            if (n < 2)
+                pix[1] = pix[0];
+
+            r      = bgr ? (pix[0] & 0xff) : ((pix[0] >> 16) & 0xff);
+            g      = (pix[0] >> 8) & 0xff;
+            b      = bgr ? ((pix[0] >> 16) & 0xff) : (pix[0] & 0xff);
+            next_r = bgr ? (pix[1] & 0xff) : ((pix[1] >> 16) & 0xff);
+            next_g = (pix[1] >> 8) & 0xff;
+            next_b = bgr ? ((pix[1] >> 16) & 0xff) : (pix[1] & 0xff);
+
+            size     = n * 24;
+            src_bits = 24;
+            break;
+        }
+
         default:
             mystique_unimpl("blit_iload_iload_high bltmod %08x\n", mystique->dwgreg.dwgctrl_running & DWGCTRL_BLTMOD_MASK);
             if (mystique->busy) {
@@ -4887,6 +4934,9 @@ blit_iload_iload_high(mystique_t *mystique, uint32_t data, int size)
             mystique->dwgreg.lastpix_r = 0;
             mystique->dwgreg.lastpix_g = 0;
             mystique->dwgreg.lastpix_b = 0;
+            /*Every source line is padded to a dword.*/
+            mystique->dwgreg.iload_rem_count = 0;
+            mystique->dwgreg.iload_rem_data  = 0;
 
             mystique->dwgreg.length_cur--;
             if (!mystique->dwgreg.length_cur) {
@@ -6767,6 +6817,9 @@ blit_iload_high(mystique_t *mystique)
         case DWGCTRL_ATYPE_RPL:
             switch (mystique->dwgreg.dwgctrl_running & DWGCTRL_BLTMOD_MASK) {
                 case DWGCTRL_BLTMOD_BUYUV:
+                case DWGCTRL_BLTMOD_BU24RGB:
+                case DWGCTRL_BLTMOD_BU24BGR:
+                case DWGCTRL_BLTMOD_BU32RGB:
                 case DWGCTRL_BLTMOD_BU32BGR:
                     mystique->dwgreg.length_cur      = mystique->dwgreg.length;
                     mystique->dwgreg.xdst            = mystique->dwgreg.fxleft;
