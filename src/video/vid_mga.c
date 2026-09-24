@@ -4678,20 +4678,19 @@ blit_iload_iload_scale(mystique_t *mystique, uint32_t data, int size)
                     svga->changedvram[((mystique->dwgreg.ydst_lin + mystique->dwgreg.xdst) & mystique->vram_mask_w) >> 11] = changeframecount;
                 }
 
-                mystique->dwgreg.ar[6] += mystique->dwgreg.ar[2];
-                if ((int32_t) mystique->dwgreg.ar[6] >= 0) {
-                    mystique->dwgreg.ar[6] -= (mystique->dwgreg.fxright - mystique->dwgreg.fxleft);
+                if ((int32_t) mystique->dwgreg.ar[4] >= 0) {
+                    mystique->dwgreg.ar[4] += mystique->dwgreg.ar[6];
                     data >>= 16;
                     size -= 16;
-                }
+                } else
+                    mystique->dwgreg.ar[4] += mystique->dwgreg.ar[2];
 
-                mystique->dwgreg.xdst = (mystique->dwgreg.xdst + 1) & 0xffff;
                 if (mystique->dwgreg.xdst == mystique->dwgreg.fxright) {
                     mystique->dwgreg.xdst = mystique->dwgreg.fxleft;
                     mystique->dwgreg.ydst_lin += (mystique->dwgreg.pitch & PITCH_MASK);
                     mystique->dwgreg.ar[0] += mystique->dwgreg.ar[5];
                     mystique->dwgreg.ar[3] += mystique->dwgreg.ar[5];
-                    mystique->dwgreg.ar[6] = mystique->dwgreg.ar[2] - (mystique->dwgreg.fxright - mystique->dwgreg.fxleft);
+                    mystique->dwgreg.ar[4] = mystique->dwgreg.ar[6];
                     mystique->dwgreg.length_cur--;
                     if (!mystique->dwgreg.length_cur) {
                         mystique->busy = 0;
@@ -4699,7 +4698,8 @@ blit_iload_iload_scale(mystique_t *mystique, uint32_t data, int size)
                         break;
                     }
                     break;
-                }
+                } else
+                    mystique->dwgreg.xdst = (mystique->dwgreg.xdst + 1) & 0xffff;
             }
             break;
 
@@ -4712,20 +4712,19 @@ blit_iload_iload_scale(mystique_t *mystique, uint32_t data, int size)
                     svga->changedvram[((mystique->dwgreg.ydst_lin + mystique->dwgreg.xdst) & mystique->vram_mask_l) >> 10] = changeframecount;
                 }
 
-                mystique->dwgreg.ar[6] += mystique->dwgreg.ar[2];
-                if ((int32_t) mystique->dwgreg.ar[6] >= 0) {
-                    mystique->dwgreg.ar[6] -= (mystique->dwgreg.fxright - mystique->dwgreg.fxleft);
+                if ((int32_t) mystique->dwgreg.ar[4] >= 0) {
+                    mystique->dwgreg.ar[4] += mystique->dwgreg.ar[6];
                     data64 >>= 32;
                     size -= 32;
-                }
+                } else
+                    mystique->dwgreg.ar[4] += mystique->dwgreg.ar[2];
 
-                mystique->dwgreg.xdst = (mystique->dwgreg.xdst + 1) & 0xffff;
                 if (mystique->dwgreg.xdst == mystique->dwgreg.fxright) {
                     mystique->dwgreg.xdst = mystique->dwgreg.fxleft;
                     mystique->dwgreg.ydst_lin += (mystique->dwgreg.pitch & PITCH_MASK);
                     mystique->dwgreg.ar[0] += mystique->dwgreg.ar[5];
                     mystique->dwgreg.ar[3] += mystique->dwgreg.ar[5];
-                    mystique->dwgreg.ar[6] = mystique->dwgreg.ar[2] - (mystique->dwgreg.fxright - mystique->dwgreg.fxleft);
+                    mystique->dwgreg.ar[4] = mystique->dwgreg.ar[6];
                     mystique->dwgreg.length_cur--;
                     if (!mystique->dwgreg.length_cur) {
                         mystique->busy = 0;
@@ -4733,7 +4732,8 @@ blit_iload_iload_scale(mystique_t *mystique, uint32_t data, int size)
                         break;
                     }
                     break;
-                }
+                } else
+                    mystique->dwgreg.xdst = (mystique->dwgreg.xdst + 1) & 0xffff;
             }
             break;
 
@@ -6716,6 +6716,10 @@ blit_iload_scale(mystique_t *mystique)
                     mystique->dwgreg.xdst            = mystique->dwgreg.fxleft;
                     mystique->dwgreg.iload_rem_data  = 0;
                     mystique->dwgreg.iload_rem_count = 0;
+                    /*AR4 is the replication error term: it takes AR6 (dXsrc - dXdst)
+                      when the source advances and AR2 (dXsrc) while a pixel repeats,
+                      and restarts from AR6 on every line.*/
+                    mystique->dwgreg.ar[4]           = mystique->dwgreg.ar[6];
                     mystique->busy                   = 1;
                     mystique->dwgreg.words           = 0;
                     /* pclog("ILOAD SCALE ATYPE RPL BLTMOD BUYUV busy\n"); */
