@@ -4732,6 +4732,7 @@ blit_iload_iload_high(mystique_t *mystique, uint32_t data, int size)
     int      next_r = 0;
     int      next_g = 0;
     int      next_b = 0;
+    int      src_bits = 16;
 
     switch (mystique->dwgreg.dwgctrl_running & DWGCTRL_BLTMOD_MASK) {
         case DWGCTRL_BLTMOD_BUYUV:
@@ -4762,18 +4763,17 @@ blit_iload_iload_high(mystique_t *mystique, uint32_t data, int size)
             break;
 
         case DWGCTRL_BLTMOD_BU32BGR:
-            r = ((data >> 16) & 0xff);
-            CLAMP(r);
+            /*32-bit B: red <7:0>, blue <23:16>, one source pixel per dword.*/
+            r = (data & 0xff);
             g = ((data >> 8) & 0xff);
-            CLAMP(g);
-            b = (data & 0xff);
-            CLAMP(b);
+            b = ((data >> 16) & 0xff);
 
             next_r = r;
             next_g = g;
             next_b = b;
 
-            size = 32;
+            size     = 32;
+            src_bits = 32;
             break;
 
         default:
@@ -4820,7 +4820,7 @@ blit_iload_iload_high(mystique_t *mystique, uint32_t data, int size)
         mystique->dwgreg.ar[6] += mystique->dwgreg.ar[2];
         if ((int32_t) mystique->dwgreg.ar[6] >= 0) {
             mystique->dwgreg.ar[6] -= 65536;
-            size -= 16;
+            size -= src_bits;
 
             mystique->dwgreg.lastpix_r = r;
             mystique->dwgreg.lastpix_g = g;
