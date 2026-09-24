@@ -2917,7 +2917,8 @@ mystique_accel_ctrl_write_l(uint32_t addr, uint32_t val, void *priv)
             break;
 
         case REG_SOFTRAP:
-            if (!mga_chip[mystique->type].has_busmaster)
+            /* Written only from a display list; a direct write has no effect. */
+            if (!mga_chip[mystique->type].has_busmaster || !mystique->list_write)
                 break;
 
             mystique->dma.state           = MGA_DMA_STATE_IDLE;
@@ -3617,7 +3618,8 @@ mystique_softrap_apply(mystique_t *mystique)
         mystique->status |= STATUS_ENDPRDMASTS;
     }
     if (atomic_exchange(&mystique->softrap_pending, 0)) {
-        mystique->dma.secaddress = mystique->softrap_pending_val;
+        /* softraphand <31:2> lands in the secaddress field; secmod <1:0> stays. */
+        mystique->dma.secaddress = (mystique->dma.secaddress & ~DMA_ADDR_MASK) | (mystique->softrap_pending_val & DMA_ADDR_MASK);
         mystique->status |= STATUS_SOFTRAPEN;
         //pclog("softrapen\n");
         mystique_update_irqs(mystique);
