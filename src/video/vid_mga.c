@@ -7560,15 +7560,11 @@ mystique_conv_16to32(svga_t* svga, uint16_t color, uint8_t bpp)
         if (bpp == 15) {
             if (mystique->xgenctrl & (1 << 2))
                 color &= 0x7FFF;
-#if 0
-            uint8_t b = getcolr(svga->pallook[(color & 0x1F) | (!!(color & 0x8000) >> 8)]);
-            uint8_t g = getcolg(svga->pallook[((color & 0x3E0) >> 5) | (!!(color & 0x8000) >> 8)]);
-            uint8_t r = getcolb(svga->pallook[((color & 0x7C00) >> 10) | (!!(color & 0x8000) >> 8)]);
-#else
-            uint8_t b = getcolb(svga->pallook[color & 0x1f]);
-            uint8_t g = getcolg(svga->pallook[(color & 0x3e0) >> 5]);
-            uint8_t r = getcolr(svga->pallook[(color & 0x7c00) >> 10]);
-#endif
+            /*With alphaen set, pixel bit 15 is the 1-bit overlay: LUT address bit 7.*/
+            uint8_t ovl = ((color & 0x8000) && (mystique->xgenctrl & (1 << 1))) ? 0x80 : 0x00;
+            uint8_t b = getcolb(svga->pallook[(color & 0x1f) | ovl]);
+            uint8_t g = getcolg(svga->pallook[((color & 0x3e0) >> 5) | ovl]);
+            uint8_t r = getcolr(svga->pallook[((color & 0x7c00) >> 10) | ovl]);
             ret = (video_15to32[color] & 0xFF000000) | makecol(r, g, b);
         } else {
             uint8_t b = getcolb(svga->pallook[color & 0x1f]);
