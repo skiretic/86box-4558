@@ -7451,8 +7451,10 @@ mystique_pci_write(UNUSED(int func), int addr, UNUSED(int len), uint8_t val, voi
                     mem_mapping_set_addr(&mystique->bios_rom.mapping, biosaddr, (mystique->type == MGA_G100) ? 0x10000 : 0x8000);
                 } else
                     mem_mapping_disable(&mystique->bios_rom.mapping);
-            } else
-                mem_mapping_set_addr(&mystique->bios_rom.mapping, 0x000c0000, (mystique->type == MGA_G100) ? 0x10000 : 0x8000);
+            } else {
+                /*biosen = 0 disables the ROMBASE space; the EPROM is decoded nowhere else.*/
+                mem_mapping_disable(&mystique->bios_rom.mapping);
+            }
             break;
 
         case 0x4c:
