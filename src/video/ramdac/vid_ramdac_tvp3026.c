@@ -98,6 +98,32 @@ tvp3026_set_bpp(tvp3026_ramdac_t *ramdac, svga_t *svga)
     svga_recalctimings(svga);
 }
 
+/*Index FFh: every register with a documented default gets it back; the
+  undefined ones (PLL data, color keys, cursor position) keep their values.*/
+static void
+tvp3026_soft_reset(tvp3026_ramdac_t *ramdac, svga_t *svga)
+{
+    ramdac->dcc            = 0x00;
+    ramdac->ccr            = 0x00;
+    ramdac->mode           = 0;
+    ramdac->latch_cntl     = 0x06;
+    ramdac->true_color     = 0x80;
+    ramdac->mcr            = 0x98;
+    ramdac->clock_sel      = 0x07;
+    ramdac->ppr            = 0x00;
+    ramdac->general_cntl   = 0x00;
+    ramdac->misc           = 0x00;
+    ramdac->gpio_cntl      = 0x00;
+    ramdac->color_key_ctrl = 0x00;
+    ramdac->mclk           = 0x18;
+    svga->dac_mask         = 0xff;
+    svga->dac_hwcursor.ena = 0;
+    svga->ramdac_type      = RAMDAC_6BIT;
+    if (ramdac->gpio_write)
+        ramdac->gpio_write(ramdac->gpio_cntl, ramdac->gpio_data, ramdac->gpio_priv);
+    tvp3026_set_bpp(ramdac, svga);
+}
+
 void
 tvp3026_ramdac_out(uint16_t addr, int rs2, int rs3, uint8_t val, void *priv, svga_t *svga)
 {
@@ -283,6 +309,9 @@ tvp3026_ramdac_out(uint16_t addr, int rs2, int rs3, uint8_t val, void *priv, svg
                     break;
                 case 0x39: /* MCLK/Loop Clock Control */
                     ramdac->mclk = val;
+                    break;
+                case 0xff: /* Software Reset; the data is ignored */
+                    tvp3026_soft_reset(ramdac, svga);
                     break;
 
                 default:
