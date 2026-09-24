@@ -6972,6 +6972,9 @@ mystique_hwcursor_draw(svga_t *svga, int displine)
     const mystique_t *mystique = (mystique_t *) svga->priv;
     uint64_t          dat[2];
     int               offset = svga->hwcursor_latch.x - svga->hwcursor_latch.xoff;
+    /*The color registers are stored by index, red in the low byte.*/
+    const uint32_t    col0   = ((mystique->cursor.col[0] & 0xff) << 16) | (mystique->cursor.col[0] & 0xff00) | ((mystique->cursor.col[0] >> 16) & 0xff);
+    const uint32_t    col1   = ((mystique->cursor.col[1] & 0xff) << 16) | (mystique->cursor.col[1] & 0xff00) | ((mystique->cursor.col[1] >> 16) & 0xff);
 
     if (svga->interlace && svga->hwcursor_oddeven)
         svga->hwcursor_latch.addr += 16;
@@ -6983,7 +6986,7 @@ mystique_hwcursor_draw(svga_t *svga, int displine)
         case XCURCTRL_CURMODE_XGA:
             for (uint8_t x = 0; x < 64; x++) {
                 if (!(dat[1] & (1ULL << 63)))
-                    svga->monitor->target_buffer->line[displine][(offset + svga->x_add) & 2047] = (dat[0] & (1ULL << 63)) ? svga_lookup_lut_ram(svga, mystique->cursor.col[1]) : svga_lookup_lut_ram(svga, mystique->cursor.col[0]);
+                    svga->monitor->target_buffer->line[displine][(offset + svga->x_add) & 2047] = (dat[0] & (1ULL << 63)) ? svga_lookup_lut_ram(svga, col1) : svga_lookup_lut_ram(svga, col0);
                 else if (dat[0] & (1ULL << 63))
                     svga->monitor->target_buffer->line[displine][(offset + svga->x_add) & 2047] ^= 0xffffff;
 
@@ -6996,7 +6999,7 @@ mystique_hwcursor_draw(svga_t *svga, int displine)
         case XCURCTRL_CURMODE_XWIN:
             for (uint8_t x = 0; x < 64; x++) {
                 if ((dat[1] & (1ULL << 63)))
-                    svga->monitor->target_buffer->line[displine][(offset + svga->x_add) & 2047] = (dat[0] & (1ULL << 63)) ? (mystique->cursor.col[1]) : (mystique->cursor.col[0]);
+                    svga->monitor->target_buffer->line[displine][(offset + svga->x_add) & 2047] = (dat[0] & (1ULL << 63)) ? col1 : col0;
 
                 offset++;
                 dat[0] <<= 1;
