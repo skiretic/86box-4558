@@ -333,6 +333,7 @@
 #define DWGCTRL_BLTMOD_BU32BGR        (0x3 << 25)
 #define DWGCTRL_BLTMOD_BMONOWF        (0x4 << 25)
 #define DWGCTRL_BLTMOD_BU32RGB        (0x7 << 25)
+#define DWGCTRL_BLTMOD_BU24BGR        (0xb << 25)
 #define DWGCTRL_BLTMOD_BUYUV          (0xe << 25)
 #define DWGCTRL_BLTMOD_BU24RGB        (0xf << 25)
 #define DWGCTRL_PATTERN               (1 << 29)
@@ -4054,7 +4055,6 @@ blit_iload_iload(mystique_t *mystique, uint32_t data, int size)
     svga_t              *svga = &mystique->svga;
     uint32_t             src;
     uint32_t             dst;
-    uint32_t             dst2;
     uint64_t             data64;
     int                  min_size = 8;
     uint32_t             bltckey = mystique->dwgreg.fcol;
@@ -4345,10 +4345,14 @@ blit_iload_iload(mystique_t *mystique, uint32_t data, int size)
                     break;
 
                 case DWGCTRL_BLTMOD_BU24RGB:
+                case DWGCTRL_BLTMOD_BU24BGR:
                     size += mystique->dwgreg.iload_rem_count;
                     data64 = mystique->dwgreg.iload_rem_data | ((uint64_t) data << mystique->dwgreg.iload_rem_count);
 
                     while (size >= 24) {
+                        /*24-bit B packs red in the low byte of each pixel.*/
+                        if ((mystique->dwgreg.dwgctrl_running & DWGCTRL_BLTMOD_MASK) == DWGCTRL_BLTMOD_BU24BGR)
+                            data64 = (data64 & ~UINT64_C(0xffffff)) | ((data64 & 0xff) << 16) | (data64 & 0xff00) | ((data64 >> 16) & 0xff);
                         if (mystique->dwgreg.xdst >= mystique->dwgreg.cxleft && mystique->dwgreg.xdst <= mystique->dwgreg.cxright && mystique->dwgreg.ydst_lin >= mystique->dwgreg.ytop && mystique->dwgreg.ydst_lin <= mystique->dwgreg.ybot && trans[mystique->dwgreg.xdst & 3]) {
                             switch (mystique->maccess_running & MACCESS_PWIDTH_MASK) {
                                 case MACCESS_PWIDTH_16:
@@ -4411,6 +4415,10 @@ blit_iload_iload(mystique_t *mystique, uint32_t data, int size)
                     mystique->dwgreg.iload_rem_data  = data64;
                     break;
 
+                case DWGCTRL_BLTMOD_BU32BGR:
+                    /*32-bit B carries red in <7:0> and blue in <23:16>.*/
+                    data = (data & 0xff00ff00) | ((data & 0xff) << 16) | ((data >> 16) & 0xff);
+                    fallthrough;
                 case DWGCTRL_BLTMOD_BU32RGB:
                     size += mystique->dwgreg.iload_rem_count;
                     data64 = mystique->dwgreg.iload_rem_data | ((uint64_t) data << mystique->dwgreg.iload_rem_count);
@@ -4531,47 +4539,6 @@ blit_iload_iload(mystique_t *mystique, uint32_t data, int size)
                     }
                     mystique->dwgreg.iload_rem_count = size;
                     mystique->dwgreg.iload_rem_data  = data64;
-                    break;
-
-                case DWGCTRL_BLTMOD_BU32BGR:
-                    size += mystique->dwgreg.iload_rem_count;
-                    while (size >= 32) {
-                        if (mystique->dwgreg.xdst >= mystique->dwgreg.cxleft && mystique->dwgreg.xdst <= mystique->dwgreg.cxright && mystique->dwgreg.ydst_lin >= mystique->dwgreg.ytop && mystique->dwgreg.ydst_lin <= mystique->dwgreg.ybot) {
-                            switch (mystique->maccess_running & MACCESS_PWIDTH_MASK) {
-                                case MACCESS_PWIDTH_32:
-                                    dst  = ((uint32_t *) svga->vram)[(mystique->dwgreg.ydst_lin + mystique->dwgreg.xdst) & mystique->vram_mask_l];
-                                    dst2 = ((dst >> 16) & 0xff) | (dst & 0xff00) | ((dst & 0xff) << 16); /* BGR to RGB */
-
-                                    dst = bitop(data, dst2, mystique);
-
-                                    ((uint32_t *) svga->vram)[(mystique->dwgreg.ydst_lin + mystique->dwgreg.xdst) & mystique->vram_mask_l] = dst;
-                                    svga->changedvram[((mystique->dwgreg.ydst_lin + mystique->dwgreg.xdst) & mystique->vram_mask_l) >> 10] = changeframecount;
-                                    break;
-
-                                default:
-                                    mystique_unimpl("ILOAD RSTR/RPL BU32RGB pwidth %08x\n", mystique->maccess_running & MACCESS_PWIDTH_MASK);
-                                    size = 0;
-                                    break;
-                            }
-                        }
-
-                        size = 0;
-                        if (mystique->dwgreg.xdst == x_last) {
-                            mystique->dwgreg.xdst = x_first;
-                            mystique->dwgreg.ydst_lin += y_step;
-                            mystique->dwgreg.selline = (mystique->dwgreg.selline + sel_step) & 7;
-                            mystique->dwgreg.length_cur--;
-                            if (!mystique->dwgreg.length_cur) {
-                                mystique->busy = 0;
-                                mystique->blitter_complete_refcount++;
-                                break;
-                            }
-                            break;
-                        } else
-                            mystique->dwgreg.xdst = (mystique->dwgreg.xdst + x_dir) & 0xffff;
-                    }
-
-                    mystique->dwgreg.iload_rem_count = size;
                     break;
 
                 default:
@@ -6656,7 +6623,9 @@ blit_iload(mystique_t *mystique)
                 case DWGCTRL_BLTMOD_BMONOLEF:
                 case DWGCTRL_BLTMOD_BMONOWF:
                 case DWGCTRL_BLTMOD_BU24RGB:
+                case DWGCTRL_BLTMOD_BU24BGR:
                 case DWGCTRL_BLTMOD_BU32RGB:
+                case DWGCTRL_BLTMOD_BU32BGR:
                 case DWGCTRL_BLTMOD_BUYUV:
                     mystique->dwgreg.length_cur      = mystique->dwgreg.length;
                     mystique->dwgreg.xdst            = mystique->dwgreg.sgn.scanleft ? mystique->dwgreg.fxright : mystique->dwgreg.fxleft;
