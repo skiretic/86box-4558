@@ -4509,7 +4509,7 @@ blit_iload_iload(mystique_t *mystique, uint32_t data, int size)
                                 default: {
                                     dst = ((uint32_t *) svga->vram)[(mystique->dwgreg.ydst_lin + mystique->dwgreg.xdst) & mystique->vram_mask_l];
 
-                                    dst                                                                                                    = bitop(data, dst, mystique);
+                                    dst                                                                                                    = bitop(data64 & 0xffffff, dst, mystique);
                                     ((uint32_t *) svga->vram)[(mystique->dwgreg.ydst_lin + mystique->dwgreg.xdst) & mystique->vram_mask_l] = dst;
                                     svga->changedvram[((mystique->dwgreg.ydst_lin + mystique->dwgreg.xdst) & mystique->vram_mask_l) >> 10] = changeframecount;
                                     break;
