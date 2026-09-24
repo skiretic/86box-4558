@@ -3464,6 +3464,29 @@ run_dma(mystique_t *mystique)
                         }
                         break;
 
+                    case DMA_MODE_BLIT:
+                        /*Blit Write: every dword is ILOAD data, as through the DMAWIN window.*/
+                        if ((mystique->dma.primaddress & DMA_ADDR_MASK) == (mystique->dma.primend & DMA_ADDR_MASK)) {
+                            mystique->endprdmasts_pending = 1;
+                            mystique->dma.state           = MGA_DMA_STATE_IDLE;
+                            break;
+                        }
+                        {
+                            uint32_t val;
+
+                            dma_bm_read(mystique->dma.primaddress & DMA_ADDR_MASK, (uint8_t *) &val, 4, 4);
+                            mystique->dma.primaddress += 4;
+                            words_transferred++;
+
+                            if (mystique->busy)
+                                blit_iload_write(mystique, val, 32);
+                        }
+                        if ((mystique->dma.primaddress & DMA_ADDR_MASK) == (mystique->dma.primend & DMA_ADDR_MASK)) {
+                            mystique->endprdmasts_pending = 1;
+                            mystique->dma.state           = MGA_DMA_STATE_IDLE;
+                        }
+                        break;
+
                     default:
                         mystique_unimpl("MGA_DMA_STATE_PRI: mode %i\n", mystique->dma.primaddress & DMA_MODE_MASK);
                         mystique->endprdmasts_pending = 1;
