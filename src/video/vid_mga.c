@@ -1336,6 +1336,9 @@ mystique_update_irqs(mystique_t *mystique)
         irq = 1;
     if ((mystique->status & STATUS_VSYNCPEN) && (svga->crtc[0x11] & 0x30) == 0x10)
         irq = 1;
+    /*D3: nothing from the function, the interrupt included.*/
+    if (mystique_in_d3(mystique))
+        irq = 0;
 
     if (irq)
         pci_set_irq(mystique->pci_slot, PCI_INTA, &mystique->irq_state);
@@ -7498,6 +7501,7 @@ mystique_pci_write(UNUSED(int func), int addr, UNUSED(int len), uint8_t val, voi
             if (mystique->type == MGA_G100) {
                 mystique->pci_regs[0xe0] = val & 0x03;
                 mystique_recalc_mapping(mystique);
+                mystique_update_irqs(mystique);
             }
             break;
 
