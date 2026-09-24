@@ -808,9 +808,11 @@ mystique_out(uint16_t addr, uint8_t val, void *priv)
                 if ((svga->crtcreg & 0x3f) < 0xE || (svga->crtcreg & 0x3f) > 0x10) {
                     if (((svga->crtcreg & 0x3f) == 0xc) || ((svga->crtcreg & 0x3f) == 0xd)) {
                         svga->fullchange = 3;
+                        /*From the 1064SG on, a Power Graphic start address takes effect on
+                          the CRTCEXT0 write, which the driver makes last.*/
                         if ((mystique->type == MGA_2064W) && (mystique->crtcext_regs[3] & CRTCX_R3_MGAMODE))
                             mystique_2064w_start_latch(mystique);
-                        else
+                        else if (!((mystique->type >= MGA_1064SG) && (mystique->crtcext_regs[3] & CRTCX_R3_MGAMODE)))
                             svga->memaddr_latch = (((mystique->crtcext_regs[0] & CRTCX_R0_STARTADD_MASK) << 16) |
                                                    (svga->crtc[0xc] << 8) | svga->crtc[0xd]) + ((svga->crtc[8] & 0x60) >> 5);
                     } else {
