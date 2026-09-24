@@ -3411,6 +3411,7 @@ run_dma(mystique_t *mystique)
             case MGA_DMA_STATE_SEC:
                 switch (mystique->dma.secaddress & DMA_MODE_MASK) {
                     case DMA_MODE_REG:
+                        /*At SECEND the secondary is finished: nothing at or past it is fetched.*/
                         if ((mystique->dma.secaddress & DMA_ADDR_MASK) >= (mystique->dma.secend & DMA_ADDR_MASK)) {
                             if ((mystique->dma.primaddress & DMA_ADDR_MASK) == (mystique->dma.primend & DMA_ADDR_MASK)) {
                                 mystique->endprdmasts_pending = 1;
@@ -3422,6 +3423,7 @@ run_dma(mystique_t *mystique)
                                 mystique->dma.words_expected = 0;
                                 mystique->dma.pri_state = 0;
                             }
+                            break;
                         }
                         if (mystique->dma.sec_state == 0) {
                             dma_bm_read(mystique->dma.secaddress & DMA_ADDR_MASK, (uint8_t *) &mystique->dma.sec_header, 4, 4);
@@ -3441,6 +3443,7 @@ run_dma(mystique_t *mystique)
                                 mystique->dma.words_expected = 0;
                                 mystique->dma.pri_state = 0;
                             }
+                            break;
                         }
 
                         uint32_t val;
