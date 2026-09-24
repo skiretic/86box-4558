@@ -763,6 +763,18 @@ static void     mystique_iload_write_l(uint32_t addr, uint32_t val, void *priv);
 static uint32_t blit_idump_read(mystique_t *mystique);
 static void     blit_iload_write(mystique_t *mystique, uint32_t data, int size);
 
+/*The 1064SG and G100 count startadd in 8 pixels at 24 bpp (24 bytes) and in
+  8 bytes at every other depth. The 2164W table keeps 8 bytes; the 1164SG has
+  no documentation.*/
+static uint32_t
+mystique_startadd_24bpp_scale(const mystique_t *mystique)
+{
+    if (((mystique->type == MGA_1064SG) || (mystique->type == MGA_G100)) &&
+        ((mystique->xmulctrl & XMULCTRL_DEPTH_MASK) == XMULCTRL_DEPTH_24))
+        return 3;
+    return 1;
+}
+
 void
 mystique_out(uint16_t addr, uint8_t val, void *priv)
 {
@@ -857,6 +869,7 @@ mystique_out(uint16_t addr, uint8_t val, void *priv)
 
                 if (!(mystique->type >= MGA_2164W))
                     svga->memaddr_latch <<= 1;
+                svga->memaddr_latch *= mystique_startadd_24bpp_scale(mystique);
 
                 if (svga->memaddr_latch != mystique->ma_latch_old) {
                     if (svga->interlace && svga->oddeven)
@@ -1111,6 +1124,7 @@ mystique_recalctimings(svga_t *svga)
               effect mid-screen*/
             if (!(mystique->type >= MGA_2164W))
                 svga->memaddr_latch <<= 1;
+            svga->memaddr_latch *= mystique_startadd_24bpp_scale(mystique);
             /* Only change memaddr_backup so the new display start will take effect on the next
                horizontal retrace. */
             if (svga->memaddr_latch != mystique->ma_latch_old) {
