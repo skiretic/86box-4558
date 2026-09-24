@@ -564,7 +564,12 @@ tvp3026_recalctimings(void *priv, svga_t *svga)
 
     svga->interlace = !!(ramdac->ccr & 0x40);
     /* TODO: Figure out gamma correction for 15/16 bpp color. */
-    svga->lut_map = !!(((svga->bpp >= 15) && (svga->bpp != 24)) && (ramdac->true_color & 0xf0) != 0x00);
+    /* Packed-24 goes through the palette in the true-color modes (TCR 56h/5Eh/57h/5Fh);
+       the direct-color packed-24 modes (16h/1Eh/17h/1Fh) set TCR4 but bypass it. */
+    if (svga->bpp == 24)
+        svga->lut_map = !!(ramdac->true_color & 0x40);
+    else
+        svga->lut_map = !!((svga->bpp >= 15) && (ramdac->true_color & 0xf0) != 0x00);
     svga->clock_multiplier = 0;
     svga->multiplexing_rate = 0;
 
