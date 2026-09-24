@@ -3170,6 +3170,28 @@ mystique_iload_write_l(UNUSED(uint32_t addr), uint32_t val, void *priv)
     mystique_queue(mystique, 0, val, FIFO_WRITE_ILOAD_LONG);
 }
 
+/*Vector Write address generator: a dword with no tags left loads 32 tags;
+  each later dword goes to XYSTRT (tag 0) or to XYEND with the start flag
+  (tag 1), low tag first. Each door keeps its own tags and count.*/
+static void
+mystique_vector_dword(mystique_t *mystique, atomic_uint *tags, atomic_int *count, uint32_t val)
+{
+    uint32_t reg_addr;
+
+    if (*count == 0) {
+        *tags  = val;
+        *count = 32;
+        return;
+    }
+    reg_addr = (*tags & 1) ? (REG_XYEND + 0x100) : REG_XYSTRT;
+    *tags >>= 1;
+    (*count)--;
+
+    if ((reg_addr & 0x300) == 0x100)
+        mystique->blitter_submit_dma_refcount++;
+    mystique_accel_ctrl_write_l(reg_addr, val, mystique);
+}
+
 static void
 mystique_accel_iload_write_l(UNUSED(uint32_t addr), uint32_t val, void *priv)
 {
@@ -3199,6 +3221,10 @@ mystique_accel_iload_write_l(UNUSED(uint32_t addr), uint32_t val, void *priv)
         case DMA_MODE_BLIT:
             if (mystique->busy)
                 blit_iload_write(mystique, val, 32);
+            break;
+
+        case DMA_MODE_VECTOR:
+            mystique_vector_dword(mystique, &mystique->dma.iload_header, &mystique->dma.iload_state, val);
             break;
 
         default:
@@ -3487,6 +3513,29 @@ run_dma(mystique_t *mystique)
                         }
                         break;
 
+                    case DMA_MODE_VECTOR:
+                        if ((mystique->dma.primaddress & DMA_ADDR_MASK) == (mystique->dma.primend & DMA_ADDR_MASK)) {
+                            mystique->endprdmasts_pending = 1;
+                            mystique->dma.state           = MGA_DMA_STATE_IDLE;
+                            break;
+                        }
+                        {
+                            uint32_t val;
+
+                            dma_bm_read(mystique->dma.primaddress & DMA_ADDR_MASK, (uint8_t *) &val, 4, 4);
+                            mystique->dma.primaddress += 4;
+                            words_transferred++;
+
+                            mystique->list_write = 1;
+                            mystique_vector_dword(mystique, &mystique->dma.pri_header, &mystique->dma.pri_state, val);
+                            mystique->list_write = 0;
+                        }
+                        if ((mystique->dma.primaddress & DMA_ADDR_MASK) == (mystique->dma.primend & DMA_ADDR_MASK)) {
+                            mystique->endprdmasts_pending = 1;
+                            mystique->dma.state           = MGA_DMA_STATE_IDLE;
+                        }
+                        break;
+
                     default:
                         mystique_unimpl("MGA_DMA_STATE_PRI: mode %i\n", mystique->dma.primaddress & DMA_MODE_MASK);
                         mystique->endprdmasts_pending = 1;
@@ -3605,6 +3654,29 @@ run_dma(mystique_t *mystique)
                                     mystique->dma.pri_state = 0;
                                 }
                             }
+                        }
+                        break;
+
+                    case DMA_MODE_VECTOR:
+                        if ((mystique->dma.secaddress & DMA_ADDR_MASK) < (mystique->dma.secend & DMA_ADDR_MASK)) {
+                            uint32_t val;
+
+                            dma_bm_read(mystique->dma.secaddress & DMA_ADDR_MASK, (uint8_t *) &val, 4, 4);
+                            mystique->dma.secaddress += 4;
+                            words_transferred++;
+
+                            mystique->list_write = 1;
+                            mystique_vector_dword(mystique, &mystique->dma.sec_header, &mystique->dma.sec_state, val);
+                            mystique->list_write = 0;
+                        }
+                        if ((mystique->dma.secaddress & DMA_ADDR_MASK) >= (mystique->dma.secend & DMA_ADDR_MASK)) {
+                            if ((mystique->dma.primaddress & DMA_ADDR_MASK) == (mystique->dma.primend & DMA_ADDR_MASK)) {
+                                mystique->endprdmasts_pending = 1;
+                                mystique->dma.state           = MGA_DMA_STATE_IDLE;
+                            } else
+                                mystique->dma.state = MGA_DMA_STATE_PRI;
+                            mystique->dma.words_expected = 0;
+                            mystique->dma.pri_state      = 0;
                         }
                         break;
 
