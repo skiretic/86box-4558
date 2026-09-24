@@ -153,12 +153,15 @@
 #define REG_MISC         0x1fc2
 #define REG_SEQ_IDX      0x1fc4
 #define REG_SEQ_DATA     0x1fc5
+#define REG_DACSTAT      0x1fc7
+#define REG_FEAT_READ    0x1fca
 #define REG_MISCREAD     0x1fcc
 #define REG_GCTL_IDX     0x1fce
 #define REG_GCTL_DATA    0x1fcf
 #define REG_CRTC_IDX     0x1fd4
 #define REG_CRTC_DATA    0x1fd5
 #define REG_INSTS1       0x1fda
+#define REG_FEAT_WRITE   0x1fda
 #define REG_CRTCEXT_IDX  0x1fde
 #define REG_CRTCEXT_DATA 0x1fdf
 #define REG_CACHEFLUSH   0x1fff
@@ -1846,6 +1849,14 @@ mystique_ctrl_read_b(uint32_t addr, void *priv)
                 ret = svga_in(0x3c5, svga);
                 break;
 
+            case REG_DACSTAT:
+                ret = svga_in(0x3c7, svga);
+                break;
+
+            case REG_FEAT_READ:
+                ret = svga_in(0x3ca, svga);
+                break;
+
             case REG_MISCREAD:
                 ret = svga_in(0x3cc, svga);
                 break;
@@ -2515,6 +2526,12 @@ mystique_ctrl_write_b(uint32_t addr, uint8_t val, void *priv)
             break;
         case REG_CRTCEXT_DATA:
             mystique_out(0x3df, val, mystique);
+            break;
+
+        /*The core holds FEAT at its CGA address; the MMIO alias does not
+          follow MISC<0>.*/
+        case REG_FEAT_WRITE:
+            svga_out(0x3da, val, svga);
             break;
 
         case REG_CACHEFLUSH:
