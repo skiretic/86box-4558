@@ -978,6 +978,16 @@ mystique_line_compare(svga_t *svga)
     return 0;
 }
 
+/*The vertical line interrupt is raised in VGA mode too; there the core's
+  split screen stays in effect.*/
+static int
+mystique_vga_line_compare(svga_t *svga)
+{
+    mystique_line_compare(svga);
+
+    return 1;
+}
+
 /*2064W Power Graphic mode: the start address is taken once per frame, so the
   latch must always hold the full register value in scan-out units. There is no
   preset row scan in this mode.*/
@@ -1221,7 +1231,7 @@ mystique_recalctimings(svga_t *svga)
             svga->vblank_start = mystique_vblank_start;
     } else {
         svga->packed_chain4 = 0;
-        svga->line_compare  = NULL;
+        svga->line_compare  = mystique_vga_line_compare;
         svga->lut_map       = 0;
         if (mystique->type >= MGA_1064SG)
             svga->bpp = 8;
