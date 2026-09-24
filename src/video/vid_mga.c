@@ -775,6 +775,17 @@ mystique_startadd_24bpp_scale(const mystique_t *mystique)
     return 1;
 }
 
+/*OPTION<12> scales the Power Graphic units only where it is interleave (2064W)
+  or part of the 2164W memconfig table; the 1164SG is undocumented and kept.
+  On the 1064SG and G100 it is the SGRAM organization and the units are fixed.*/
+static int
+mystique_option12_doubles(const mystique_t *mystique)
+{
+    if ((mystique->type == MGA_1064SG) || (mystique->type == MGA_G100))
+        return 0;
+    return !!(mystique->pci_regs[0x41] & (OPTION_INTERLEAVE >> 8));
+}
+
 void
 mystique_out(uint16_t addr, uint8_t val, void *priv)
 {
@@ -857,17 +868,17 @@ mystique_out(uint16_t addr, uint8_t val, void *priv)
                 svga->rowoffset     = svga->crtc[0x13] |
                                       ((mystique->crtcext_regs[0] & CRTCX_R0_OFFSET_MASK) << 4);
 
-                if (!(mystique->type >= MGA_2164W))
+                if (mystique->type != MGA_2164W)
                     svga->rowoffset <<= 1;
 
                 svga->memaddr_latch      = (((mystique->crtcext_regs[0] & CRTCX_R0_STARTADD_MASK) << 16) |
                                              (svga->crtc[0xc] << 8) | svga->crtc[0xd]) + ((svga->crtc[8] & 0x60) >> 5);
-                if ((mystique->pci_regs[0x41] & (OPTION_INTERLEAVE >> 8))) {
+                if (mystique_option12_doubles(mystique)) {
                     svga->rowoffset <<= 1;
                     svga->memaddr_latch <<= 1;
                 }
 
-                if (!(mystique->type >= MGA_2164W))
+                if (mystique->type != MGA_2164W)
                     svga->memaddr_latch <<= 1;
                 svga->memaddr_latch *= mystique_startadd_24bpp_scale(mystique);
 
@@ -1125,7 +1136,7 @@ mystique_recalctimings(svga_t *svga)
         else if (mystique->type >= MGA_1064SG)
             svga->memaddr_latch = ((mystique->crtcext_regs[0] & CRTCX_R0_STARTADD_MASK) << 16) | (svga->crtc[0xc] << 8) | svga->crtc[0xd];
 
-        if ((mystique->pci_regs[0x41] & (OPTION_INTERLEAVE >> 8))) {
+        if (mystique_option12_doubles(mystique)) {
             svga->rowoffset <<= 1;
             if (mystique->type >= MGA_1064SG)
                 svga->memaddr_latch <<= 1;
@@ -1134,7 +1145,7 @@ mystique_recalctimings(svga_t *svga)
         if (mystique->type >= MGA_1064SG) {
             /*Mystique and later, unlike most SVGA cards, allows display start to take
               effect mid-screen*/
-            if (!(mystique->type >= MGA_2164W))
+            if (mystique->type != MGA_2164W)
                 svga->memaddr_latch <<= 1;
             svga->memaddr_latch *= mystique_startadd_24bpp_scale(mystique);
             /* Only change memaddr_backup so the new display start will take effect on the next
@@ -1149,7 +1160,7 @@ mystique_recalctimings(svga_t *svga)
                 mystique->ma_latch_old = svga->memaddr_latch;
             }
 
-            if (!(mystique->type >= MGA_2164W))
+            if (mystique->type != MGA_2164W)
                 svga->rowoffset <<= 1;
             if (mystique->type != MGA_2164W) {
                 switch (mystique->xmulctrl & XMULCTRL_DEPTH_MASK) {
