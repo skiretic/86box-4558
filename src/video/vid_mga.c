@@ -1227,12 +1227,20 @@ mystique_recalctimings(svga_t *svga)
 #endif
 }
 
+/*PM_CSR power state 11 (D3; only the G100 stores E0h): the function
+  answers configuration cycles only.*/
+static int
+mystique_in_d3(const mystique_t *mystique)
+{
+    return (mystique->pci_regs[0xe0] & 0x03) == 0x03;
+}
+
 /*The EPROM is decoded at ROMBASE only, and only with memspace, biosen and
   romen all set.*/
 static void
 mystique_bios_rom_mapping(mystique_t *mystique)
 {
-    if ((mystique->pci_regs[PCI_REG_COMMAND] & PCI_COMMAND_MEM) && (mystique->pci_regs[0x43] & 0x40) && (mystique->pci_regs[0x30] & 0x01)) {
+    if ((mystique->pci_regs[PCI_REG_COMMAND] & PCI_COMMAND_MEM) && !mystique_in_d3(mystique) && (mystique->pci_regs[0x43] & 0x40) && (mystique->pci_regs[0x30] & 0x01)) {
         uint32_t biosaddr = (mystique->pci_regs[0x32] << 16) | (mystique->pci_regs[0x33] << 24);
         mem_mapping_set_addr(&mystique->bios_rom.mapping, biosaddr, (mystique->type == MGA_G100) ? 0x10000 : 0x8000);
     } else
@@ -1248,13 +1256,13 @@ mystique_recalc_mapping(mystique_t *mystique)
     mystique_bios_rom_mapping(mystique);
 
     io_removehandler(0x03a0, 0x0040, mystique_in, NULL, NULL, mystique_out, NULL, NULL, mystique);
-    if ((mystique->pci_regs[PCI_REG_COMMAND] & PCI_COMMAND_IO) && (mystique->pci_regs[0x41] & 1)) {
+    if ((mystique->pci_regs[PCI_REG_COMMAND] & PCI_COMMAND_IO) && (mystique->pci_regs[0x41] & 1) && !mystique_in_d3(mystique)) {
         if (!(svga->miscout & 0x01))
             io_sethandler(0x03a0, 0x0020, mystique_in, NULL, NULL, mystique_out, NULL, NULL, mystique);
         io_sethandler(0x03c0, 0x0020, mystique_in, NULL, NULL, mystique_out, NULL, NULL, mystique);
     }
 
-    if (!(mystique->pci_regs[PCI_REG_COMMAND] & PCI_COMMAND_MEM)) {
+    if (!(mystique->pci_regs[PCI_REG_COMMAND] & PCI_COMMAND_MEM) || mystique_in_d3(mystique)) {
         mem_mapping_disable(&svga->mapping);
         mem_mapping_disable(&mystique->ctrl_mapping);
         mem_mapping_disable(&mystique->lfb_mapping);
@@ -7487,8 +7495,10 @@ mystique_pci_write(UNUSED(int func), int addr, UNUSED(int len), uint8_t val, voi
             break;
 
         case 0xe0:
-            if (mystique->type == MGA_G100)
+            if (mystique->type == MGA_G100) {
                 mystique->pci_regs[0xe0] = val & 0x03;
+                mystique_recalc_mapping(mystique);
+            }
             break;
 
         case 0xf8:
