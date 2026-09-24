@@ -2416,11 +2416,11 @@ mystique_ctrl_write_b(uint32_t addr, uint8_t val, void *priv)
         case REG_PRIMADDRESS + 3:
             thread_wait_mutex(mystique->dma.lock);
             WRITE8(addr, mystique->dma.primaddress, val);
-            mystique->dma.pri_state = 0;
-            if (mystique->dma.state == MGA_DMA_STATE_IDLE && !(mystique->softrap_pending || mystique->endprdmasts_pending)) {
-                mystique->dma.words_expected = 0;
-            }
-            mystique->dma.state = MGA_DMA_STATE_IDLE;
+            /*A PRIMADDRESS write restarts the sequence: the next dword is a header,
+              even while a trap or the end status is still pending.*/
+            mystique->dma.pri_state      = 0;
+            mystique->dma.words_expected = 0;
+            mystique->dma.state          = MGA_DMA_STATE_IDLE;
             thread_release_mutex(mystique->dma.lock);
             break;
 
