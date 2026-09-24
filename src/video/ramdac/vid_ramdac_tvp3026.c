@@ -38,6 +38,10 @@ typedef struct tvp3026_ramdac_t {
     uint8_t  dc_init;
     uint8_t  ccr;
     uint8_t  cram_hi;
+    uint8_t  ccol_addr;
+    uint8_t  ccol_pos;
+    uint8_t  ccol_r;
+    uint8_t  ccol_g;
     uint8_t  true_color;
     uint8_t  latch_cntl;
     uint8_t  mcr;
@@ -141,9 +145,7 @@ tvp3026_ramdac_out(uint16_t addr, int rs2, int rs3, uint8_t val, void *priv, svg
         case 0x00: /* Palette Write Index Register (RS value = 0000) */
             ramdac->ind_idx = val;
             fallthrough;
-        case 0x04: /* Ext Palette Write Index Register (RS value = 0100) */
-        case 0x03:
-        case 0x07: /* Ext Palette Read Index Register (RS value = 0111) */
+        case 0x03: /* Palette Read Index Register (RS value = 0011) */
             svga->dac_pos    = 0;
             svga->dac_status = addr & 0x03;
             svga->dac_addr   = val;
@@ -151,29 +153,33 @@ tvp3026_ramdac_out(uint16_t addr, int rs2, int rs3, uint8_t val, void *priv, svg
                 svga->dac_addr = (svga->dac_addr + 1) & da_mask;
             /*The cursor RAM counter takes A9:A8 from CCR3:2 at this write,
               not at each data access.*/
-            if ((rs == 0x00) || (rs == 0x03))
-                ramdac->cram_hi = (ramdac->ccr >> 2) & 0x03;
+            ramdac->cram_hi = (ramdac->ccr >> 2) & 0x03;
+            break;
+        case 0x04: /* Cursor/Overscan Color Write Address (RS value = 0100) */
+        case 0x07: /* Cursor/Overscan Color Read Address (RS value = 0111) */
+            /*One color address register, separate from the palette address.*/
+            ramdac->ccol_addr = val;
+            ramdac->ccol_pos  = 0;
             break;
         case 0x01: /* Palette Data Register (RS value = 0001) */
         case 0x02: /* Pixel Read Mask Register (RS value = 0010) */
             svga_out(addr, val, svga);
             break;
-        case 0x05: /* Ext Palette Data Register (RS value = 0101) */
-            svga->dac_status = 0;
+        case 0x05: /* Cursor/Overscan Color Data Register (RS value = 0101) */
             svga->fullchange = changeframecount;
-            switch (svga->dac_pos) {
+            switch (ramdac->ccol_pos) {
                 case 0:
-                    svga->dac_r = val;
-                    svga->dac_pos++;
+                    ramdac->ccol_r = val;
+                    ramdac->ccol_pos++;
                     break;
                 case 1:
-                    svga->dac_g = val;
-                    svga->dac_pos++;
+                    ramdac->ccol_g = val;
+                    ramdac->ccol_pos++;
                     break;
                 case 2:
-                    index                   = svga->dac_addr & 3;
-                    ramdac->extpal[index].r = svga->dac_r;
-                    ramdac->extpal[index].g = svga->dac_g;
+                    index                   = ramdac->ccol_addr & 3;
+                    ramdac->extpal[index].r = ramdac->ccol_r;
+                    ramdac->extpal[index].g = ramdac->ccol_g;
                     ramdac->extpal[index].b = val;
                     if (svga->ramdac_type == RAMDAC_8BIT)
                         ramdac->extpallook[index] = makecol32(ramdac->extpal[index].r, ramdac->extpal[index].g, ramdac->extpal[index].b);
@@ -186,8 +192,8 @@ tvp3026_ramdac_out(uint16_t addr, int rs2, int rs3, uint8_t val, void *priv, svg
                         if (o32 != svga->overscan_color)
                             svga_recalctimings(svga);
                     }
-                    svga->dac_addr = (svga->dac_addr + 1) & 0xff;
-                    svga->dac_pos  = 0;
+                    ramdac->ccol_addr++;
+                    ramdac->ccol_pos = 0;
                     break;
 
                 default:
@@ -370,34 +376,35 @@ tvp3026_ramdac_in(uint16_t addr, int rs2, int rs3, void *priv, svga_t *svga)
         case 0x00: /* Palette Write Index Register (RS value = 0000) */
         case 0x01: /* Palette Data Register (RS value = 0001) */
         case 0x02: /* Pixel Read Mask Register (RS value = 0010) */
-        case 0x04: /* Ext Palette Write Index Register (RS value = 0100) */
             temp = svga_in(addr, svga);
             break;
         case 0x03: /* Palette Read Index Register (RS value = 0011) */
-        case 0x07: /* Ext Palette Read Index Register (RS value = 0111) */
             temp = svga->dac_addr & 0xff;
             break;
-        case 0x05: /* Ext Palette Data Register (RS value = 0101) */
-            index            = (svga->dac_addr - 1) & 3;
-            svga->dac_status = 3;
-            switch (svga->dac_pos) {
+        case 0x04: /* Cursor/Overscan Color Write Address (RS value = 0100) */
+        case 0x07: /* Cursor/Overscan Color Read Address (RS value = 0111) */
+            temp = ramdac->ccol_addr;
+            break;
+        case 0x05: /* Cursor/Overscan Color Data Register (RS value = 0101) */
+            index = ramdac->ccol_addr & 3;
+            switch (ramdac->ccol_pos) {
                 case 0:
-                    svga->dac_pos++;
+                    ramdac->ccol_pos++;
                     if (svga->ramdac_type == RAMDAC_8BIT)
                         temp = ramdac->extpal[index].r;
                     else
                         temp = ramdac->extpal[index].r & 0x3f;
                     break;
                 case 1:
-                    svga->dac_pos++;
+                    ramdac->ccol_pos++;
                     if (svga->ramdac_type == RAMDAC_8BIT)
                         temp = ramdac->extpal[index].g;
                     else
                         temp = ramdac->extpal[index].g & 0x3f;
                     break;
                 case 2:
-                    svga->dac_pos  = 0;
-                    svga->dac_addr = svga->dac_addr + 1;
+                    ramdac->ccol_pos = 0;
+                    ramdac->ccol_addr++;
                     if (svga->ramdac_type == RAMDAC_8BIT)
                         temp = ramdac->extpal[index].b;
                     else
