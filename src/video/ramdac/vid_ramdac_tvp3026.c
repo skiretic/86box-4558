@@ -606,14 +606,14 @@ tvp3026_conv_16to32(svga_t* svga, uint16_t color, uint8_t bpp)
 
     if (svga->lut_map) {
         if (bpp == 15) {
-            uint8_t b = getcolr(svga->pallook[(color & 0x1f) << 3]);
+            uint8_t b = getcolb(svga->pallook[(color & 0x1f) << 3]);
             uint8_t g = getcolg(svga->pallook[(color & 0x3e0) >> 2]);
-            uint8_t r = getcolb(svga->pallook[(color & 0x7c00) >> 7]);
+            uint8_t r = getcolr(svga->pallook[(color & 0x7c00) >> 7]);
             ret = (video_15to32[color] & 0xFF000000) | makecol(r, g, b);
         } else {
-            uint8_t b = getcolr(svga->pallook[(color & 0x1f) << 3]);
+            uint8_t b = getcolb(svga->pallook[(color & 0x1f) << 3]);
             uint8_t g = getcolg(svga->pallook[(color & 0x7e0) >> 3]);
-            uint8_t r = getcolb(svga->pallook[(color & 0xf800) >> 8]);
+            uint8_t r = getcolr(svga->pallook[(color & 0xf800) >> 8]);
             ret = (video_16to32[color] & 0xFF000000) | makecol(r, g, b);
         }
     } else
