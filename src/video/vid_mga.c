@@ -1069,11 +1069,11 @@ mystique_recalctimings(svga_t *svga)
     if (mystique->crtcext_regs[2] & CRTCX_R2_LINECOMP10)
         svga->split += 0x400;
 
-    if (mystique->type == MGA_2064W || mystique->type == MGA_2164W) {
+    if (mystique->type == MGA_2064W || mystique->type == MGA_2164W)
         tvp3026_recalctimings(svga->ramdac, svga);
-        svga->interlace |= !!(mystique->crtcext_regs[0] & 0x80);
-    } else
-        svga->interlace = !!(mystique->crtcext_regs[0] & 0x80);
+    /*Display interlace is CRTCEXT0<7> alone; the TVP3026 CCR6 it would pick up
+      is the cursor's odd/even polarity.*/
+    svga->interlace = !!(mystique->crtcext_regs[0] & 0x80);
 
     if (mystique->crtcext_regs[3] & CRTCX_R3_MGAMODE) {
         svga->lowres        = 0;
