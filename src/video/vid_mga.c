@@ -7348,17 +7348,13 @@ mystique_pci_read(UNUSED(int func), int addr, UNUSED(int len), void *priv)
                 ret = mystique->iload_base >> 24;
                 break;
 
+            /*The 2064W has no SUBSYSID: 2Ch-2Fh are reserved and read 0.*/
             case 0x2c:
-                ret = mystique->pci_regs[0x2c];
-                break;
             case 0x2d:
-                ret = mystique->pci_regs[0x2d];
-                break;
             case 0x2e:
-                ret = mystique->pci_regs[0x2e];
-                break;
             case 0x2f:
-                ret = mystique->pci_regs[0x2f];
+                if (mystique->type != MGA_2064W)
+                    ret = mystique->pci_regs[addr];
                 break;
 
             case 0x30:
@@ -7610,7 +7606,8 @@ mystique_pci_write(UNUSED(int func), int addr, UNUSED(int len), uint8_t val, voi
         case 0x4d:
         case 0x4e:
         case 0x4f:
-            mystique->pci_regs[addr - 0x20] = val;
+            if (mystique->type != MGA_2064W)
+                mystique->pci_regs[addr - 0x20] = val;
             break;
 
         case 0x44:
