@@ -7269,7 +7269,8 @@ mystique_pci_read(UNUSED(int func), int addr, UNUSED(int len), void *priv)
                 break;
 
             case PCI_REG_COMMAND:
-                ret = mystique->pci_regs[PCI_REG_COMMAND] | 0x80;
+                /* waitcycle <7> is hard-wired: 0 on the 2164W, 1 on the other chips. */
+                ret = mystique->pci_regs[PCI_REG_COMMAND] | ((mystique->type == MGA_2164W) ? 0x00 : 0x80);
                 break; /*Respond to IO and memory accesses*/
             case 0x05:
                 ret = 0x00;
@@ -7493,7 +7494,7 @@ mystique_pci_write(UNUSED(int func), int addr, UNUSED(int len), uint8_t val, voi
 
     switch (addr) {
         case PCI_REG_COMMAND:
-            mystique->pci_regs[PCI_REG_COMMAND] = (val & (mga_chip[mystique->type].has_busmaster ? 0x27 : 0x23)) | 0x80;
+            mystique->pci_regs[PCI_REG_COMMAND] = val & (mga_chip[mystique->type].has_busmaster ? 0x27 : 0x23);
             mystique_recalc_mapping(mystique);
             break;
 
