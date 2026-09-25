@@ -265,6 +265,12 @@
 #define XREG_XCOLKEYL                 0x42
 #define XREG_XCOLKEYH                 0x43
 
+#define XREG_XPIXPLLAM                0x44
+#define XREG_XPIXPLLAN                0x45
+#define XREG_XPIXPLLAP                0x46
+#define XREG_XPIXPLLBM                0x48
+#define XREG_XPIXPLLBN                0x49
+#define XREG_XPIXPLLBP                0x4a
 #define XREG_XPIXPLLCM                0x4c
 #define XREG_XPIXPLLCN                0x4d
 #define XREG_XPIXPLLCP                0x4e
@@ -1039,20 +1045,34 @@ static float
 mystique_getclock(int clock, void *priv)
 {
     const mystique_t *mystique = (mystique_t *) priv;
+    const int         set      = (clock >= 2) ? 2 : clock;
 
-    if (clock == 0)
-        return 25175000.0f;
-    if (clock == 1)
-        return 28322000.0f;
-
-    int m  = mystique->xpixpll[2].m;
-    int n  = mystique->xpixpll[2].n;
-    int pl = mystique->xpixpll[2].p;
+    int m  = mystique->xpixpll[set].m;
+    int n  = mystique->xpixpll[set].n;
+    int pl = mystique->xpixpll[set].p;
 
     float fvco = mystique->pll_ref_clock * ((float) n + 1.0f) / ((float) m + 1.0f);
     float fo   = fvco / ((float) pl + 1.0);
 
     return fo;
+}
+
+/*Pixel PLL sets A and B reset to the VGA clocks: 25.159 / 28.306 MHz from the
+  G100's 27 MHz reference, 25.172 / 28.361 MHz from the 1064SG's 14.318 MHz one.
+  The 1164SG has no document and takes the 1064SG values. Set C resets unknown.*/
+static void
+mystique_pixpll_reset(mystique_t *mystique)
+{
+    static const uint8_t g100[2][3] = { { 0x15, 0x28, 0x01 }, { 0x1e, 0x40, 0x01 } };
+    static const uint8_t sg[2][3]   = { { 0x1e, 0x6c, 0x01 }, { 0x19, 0x66, 0x01 } };
+    const uint8_t(*v)[3]            = (mystique->type == MGA_G100) ? g100 : sg;
+
+    for (int i = 0; i < 2; i++) {
+        mystique->xpixpll[i].m = v[i][0];
+        mystique->xpixpll[i].n = v[i][1];
+        mystique->xpixpll[i].p = v[i][2] & 7;
+        mystique->xpixpll[i].s = (v[i][2] >> 3) & 3;
+    }
 }
 
 /*svga_render_blank sizes its line in character clocks; in Power Graphic mode
@@ -1548,14 +1568,20 @@ mystique_read_xreg(mystique_t *mystique, int reg)
             ret = XPIXPLLSTAT_SYSLOCK;
             break;
 
+        case XREG_XPIXPLLAM:
+        case XREG_XPIXPLLBM:
         case XREG_XPIXPLLCM:
-            ret = mystique->xpixpll[2].m;
+            ret = mystique->xpixpll[(reg - XREG_XPIXPLLAM) >> 2].m;
             break;
+        case XREG_XPIXPLLAN:
+        case XREG_XPIXPLLBN:
         case XREG_XPIXPLLCN:
-            ret = mystique->xpixpll[2].n;
+            ret = mystique->xpixpll[(reg - XREG_XPIXPLLAM) >> 2].n;
             break;
+        case XREG_XPIXPLLAP:
+        case XREG_XPIXPLLBP:
         case XREG_XPIXPLLCP:
-            ret = mystique->xpixpll[2].p | (mystique->xpixpll[2].s << 3);
+            ret = mystique->xpixpll[(reg - XREG_XPIXPLLAM) >> 2].p | (mystique->xpixpll[(reg - XREG_XPIXPLLAM) >> 2].s << 3);
             break;
 
         case 0x00:
@@ -1683,6 +1709,24 @@ mystique_write_xreg(mystique_t *mystique, int reg, uint8_t val)
 
         case XREG_XPIXCLKCTRL:
             mystique->xpixclkctrl = val;
+            break;
+
+        /* Sets A and B are the PLL settings MISC clksel 00 / 01 select. */
+        case XREG_XPIXPLLAM:
+        case XREG_XPIXPLLBM:
+            mystique->xpixpll[(reg - XREG_XPIXPLLAM) >> 2].m = val;
+            svga_recalctimings(svga);
+            break;
+        case XREG_XPIXPLLAN:
+        case XREG_XPIXPLLBN:
+            mystique->xpixpll[(reg - XREG_XPIXPLLAM) >> 2].n = val;
+            svga_recalctimings(svga);
+            break;
+        case XREG_XPIXPLLAP:
+        case XREG_XPIXPLLBP:
+            mystique->xpixpll[(reg - XREG_XPIXPLLAM) >> 2].p = val & 7;
+            mystique->xpixpll[(reg - XREG_XPIXPLLAM) >> 2].s = (val >> 3) & 3;
+            svga_recalctimings(svga);
             break;
 
         case XREG_XPIXPLLCM:
@@ -7711,6 +7755,8 @@ mystique_init(const device_t *info)
         mystique->crtcext_regs[6] = 0x70;
     } else
         mystique->pll_ref_clock = 14318181.0f;
+    if ((mystique->type != MGA_2064W) && (mystique->type != MGA_2164W))
+        mystique_pixpll_reset(mystique);
 
     if (mystique->type == MGA_2064W)
         romfn = ROM_MILLENNIUM;
@@ -7947,6 +7993,9 @@ mystique_reset(void *priv)
     if (mystique->type >= MGA_G100)
         mystique->crtcext_regs[6] = 0x70;
     mystique->crtcext_idx = 0;
+
+    if ((mystique->type != MGA_2064W) && (mystique->type != MGA_2164W))
+        mystique_pixpll_reset(mystique);
 
     svga->read_bank  = 0;
     svga->write_bank = 0;
