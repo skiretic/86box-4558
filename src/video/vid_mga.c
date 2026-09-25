@@ -752,6 +752,7 @@ static void     mystique_writew_vga(uint32_t addr, uint16_t val, void *priv);
 static void     mystique_writel_vga(uint32_t addr, uint32_t val, void *priv);
 
 static void mystique_recalc_mapping(mystique_t *mystique);
+static void mystique_update_dpms(mystique_t *mystique);
 static void mystique_2064w_start_latch(mystique_t *mystique);
 static int  mystique_line_compare(svga_t *svga);
 
@@ -856,12 +857,12 @@ mystique_out(uint16_t addr, uint8_t val, void *priv)
             mystique->crtcext_idx = val & 0x07;
             break;
         case 0x3df:
-            if (mystique->crtcext_idx == 1)
-                svga->dpms = !!(val & 0x30);
             /* CRTCEXT6 exists on the G100 only; on the earlier parts index 6 is not a
                register and the write is dropped. */
             if (mystique->crtcext_idx < ((mystique->type >= MGA_G100) ? 7 : 6))
                 mystique->crtcext_regs[mystique->crtcext_idx] = val;
+            if (mystique->crtcext_idx == 1)
+                mystique_update_dpms(mystique);
 
             if ((mystique->type >= MGA_1064SG) && (mystique->crtcext_idx == 0) &&
                 (mystique->crtcext_regs[3] & CRTCX_R3_MGAMODE)) {
@@ -1272,6 +1273,14 @@ static int
 mystique_in_d3(const mystique_t *mystique)
 {
     return (mystique->pci_regs[0xe0] & 0x03) == 0x03;
+}
+
+/*No sync leaves the chip when CRTCEXT1 hsyncoff/vsyncoff say so, or in D3,
+  where the back-end is off.*/
+static void
+mystique_update_dpms(mystique_t *mystique)
+{
+    mystique->svga.dpms = !!(mystique->crtcext_regs[1] & 0x30) || mystique_in_d3(mystique);
 }
 
 /*The EPROM is decoded at ROMBASE only, and only with memspace, biosen and
@@ -7633,6 +7642,8 @@ mystique_pci_write(UNUSED(int func), int addr, UNUSED(int len), uint8_t val, voi
                 mystique->pci_regs[0xe0] = val & 0x03;
                 mystique_recalc_mapping(mystique);
                 mystique_update_irqs(mystique);
+                mystique_update_dpms(mystique);
+                svga_recalctimings(&mystique->svga);
             }
             break;
 
