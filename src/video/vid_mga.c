@@ -526,6 +526,10 @@ typedef struct mystique_t {
     uint8_t pci_regs[256], crtcext_regs[7],
         xreg_regs[256], dmamap[16];
 
+    /* Bytes of a dword MGA_DATA write collected so far. */
+    uint32_t mga_data_val;
+    int      mga_data_n;
+
     int vram_size, crtcext_idx, xreg_idx, xzoomctrl;
 
     atomic_int busy, blitter_submit_refcount,
@@ -7544,7 +7548,7 @@ mystique_pci_read(UNUSED(int func), int addr, UNUSED(int len), void *priv)
 }
 
 static void
-mystique_pci_write(UNUSED(int func), int addr, UNUSED(int len), uint8_t val, void *priv)
+mystique_pci_write(UNUSED(int func), int addr, int len, uint8_t val, void *priv)
 {
     mystique_t *mystique = (mystique_t *) priv;
 
@@ -7729,6 +7733,22 @@ mystique_pci_write(UNUSED(int func), int addr, UNUSED(int len), uint8_t val, voi
 #if 0
             pclog("mystique_ctrl_write_b(%04X, %02X)\n", addr, val);
 #endif
+            /* The PCI layer splits a config dword into four byte calls with len 4. A dword
+               MGA_DATA write is one dword write to the indexed register, so collect it and
+               forward it whole; anything else takes the byte path. */
+            if ((len == 4) && ((addr & 3) == 0))
+                mystique->mga_data_n = 0;
+            if ((len == 4) && ((addr & 3) == mystique->mga_data_n)) {
+                if (mystique->mga_data_n == 0)
+                    mystique->mga_data_val = 0;
+                mystique->mga_data_val |= (uint32_t) val << (8 * mystique->mga_data_n);
+                if (++mystique->mga_data_n == 4) {
+                    mystique->mga_data_n = 0;
+                    mystique_ctrl_write_l(addr & ~3, mystique->mga_data_val, mystique);
+                }
+                break;
+            }
+            mystique->mga_data_n = 0;
             mystique_ctrl_write_b(addr, val, mystique);
             break;
 
