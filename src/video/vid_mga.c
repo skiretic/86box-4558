@@ -1147,6 +1147,10 @@ mystique_recalctimings(svga_t *svga)
     uint32_t hblankstart = ((mystique->crtcext_regs[1] & 0x02) << 7) + svga->crtc[2];
     svga->hblankstart    = (int) hblankstart;
 
+    /* "There is no overscan in Power Graphic mode": the blanking is programmed
+       contiguous with the display, so the frame has no border on any side. */
+    svga->no_overscan = !!(mystique->crtcext_regs[3] & CRTCX_R3_MGAMODE);
+
     if (mystique->crtcext_regs[2] & CRTCX_R2_VTOTAL10)
         svga->vtotal += 0x400;
     if (mystique->crtcext_regs[2] & CRTCX_R2_VTOTAL11)

@@ -62,6 +62,7 @@ typedef struct svga_t {
     uint8_t chain2_write;
     uint8_t chain2_read;
     uint8_t ext_overscan;
+    uint8_t no_overscan; /* set by the device: the current mode has no border at all */
     uint8_t bus_size;
     uint8_t lowres;
     uint8_t interlace;

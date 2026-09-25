@@ -1077,6 +1077,15 @@ svga_recalctimings(svga_t *svga)
         }
     }
 
+    /* A device whose current mode has no overscan (blanking contiguous with the display) says so;
+       the border computed from the blanking registers, and its compensation, do not apply. */
+    if (svga->no_overscan) {
+        svga->left_overscan = svga->x_add = 0;
+        svga->y_add                         = 0;
+        svga->monitor->mon_overscan_x       = 0;
+        svga->monitor->mon_overscan_y       = 0;
+    }
+
 #if TBD
     if (ibm8514_active && (svga->dev8514 != NULL)) {
         if (dev->on) {
