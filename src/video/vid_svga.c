@@ -1761,6 +1761,8 @@ svga_poll(void *priv)
             svga->overlay_on    = 0;
             svga->overlay_latch = svga->overlay;
         }
+        if (svga->vline_callback)
+            svga->vline_callback(svga);
         if (svga->scanline == (svga->crtc[10] & 31))
             svga->cursorvisible = 1;
     }

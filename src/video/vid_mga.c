@@ -991,25 +991,31 @@ mystique_in(uint16_t addr, void *priv)
     return temp;
 }
 
+/*Power Graphic mode has no split screen; VGA mode keeps the core's.*/
 static int
-mystique_line_compare(svga_t *svga)
+mystique_line_compare(UNUSED(svga_t *svga))
 {
-    mystique_t *mystique = (mystique_t *) svga->priv;
-
-    mystique->status |= STATUS_VLINEPEN;
-    mystique_update_irqs(mystique);
-
     return 0;
 }
 
-/*The vertical line interrupt is raised in VGA mode too; there the core's
-  split screen stays in effect.*/
 static int
-mystique_vga_line_compare(svga_t *svga)
+mystique_vga_line_compare(UNUSED(svga_t *svga))
 {
-    mystique_line_compare(svga);
-
     return 1;
+}
+
+/*vlinepen is set at the beginning of the line whose vertical count equals
+  linecomp, in both modes. The core's split is linecomp + 1 (where the VGA
+  split screen starts), so it cannot drive the interrupt.*/
+static void
+mystique_vline_callback(svga_t *svga)
+{
+    mystique_t *mystique = (mystique_t *) svga->priv;
+
+    if (svga->vc == ((svga->split - 1) & 0x7ff)) {
+        mystique->status |= STATUS_VLINEPEN;
+        mystique_update_irqs(mystique);
+    }
 }
 
 /*2064W Power Graphic mode: the start address is taken once per frame, so the
@@ -7959,6 +7965,7 @@ mystique_init(const device_t *info)
     mystique->status = STATUS_ENDPRDMASTS;
 
     mystique->svga.vsync_callback = mystique_vsync_callback;
+    mystique->svga.vline_callback = mystique_vline_callback;
 
     if (mystique->type != MGA_2064W && mystique->type != MGA_2164W)
         mystique->svga.conv_16to32    = mystique_conv_16to32;

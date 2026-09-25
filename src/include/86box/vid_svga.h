@@ -228,12 +228,14 @@ typedef struct svga_t {
     float (*getclock8514)(int clock, void *priv);
 
     /* Called when VC=R18 and friends. If this returns zero then MA resetting
-       is skipped. Matrox Mystique in Power mode reuses this counter for
-       vertical line interrupt*/
+       is skipped. */
     int (*line_compare)(struct svga_t *svga);
 
     /*Called at the start of vertical sync*/
     void (*vsync_callback)(struct svga_t *svga);
+
+    /*Called once per counted line, after VC has advanced to the new line*/
+    void (*vline_callback)(struct svga_t *svga);
 
     uint32_t (*translate_address)(uint32_t addr, void *priv);
     /*If set then another device is driving the monitor output and the SVGA
