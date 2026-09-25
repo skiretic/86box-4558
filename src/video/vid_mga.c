@@ -797,6 +797,26 @@ mystique_option12_doubles(const mystique_t *mystique)
     return !!(mystique->pci_regs[0x41] & (OPTION_INTERLEAVE >> 8));
 }
 
+/*Integrated DAC PALDATA: vga8dac acts on the transfer. In 6-bit mode a write
+  is stored shifted left by two and a read returns the entry shifted right.*/
+static void
+mystique_paldata_write(mystique_t *mystique, uint8_t val)
+{
+    if (!(mystique->xmiscctrl & XMISCCTRL_VGA8DAC))
+        val <<= 2;
+    svga_out(0x3c9, val, &mystique->svga);
+}
+
+static uint8_t
+mystique_paldata_read(mystique_t *mystique)
+{
+    uint8_t ret = svga_in(0x3c9, &mystique->svga);
+
+    if (!(mystique->xmiscctrl & XMISCCTRL_VGA8DAC))
+        ret >>= 2;
+    return ret;
+}
+
 void
 mystique_out(uint16_t addr, uint8_t val, void *priv)
 {
@@ -816,6 +836,10 @@ mystique_out(uint16_t addr, uint8_t val, void *priv)
         case 0x3c9:
             if (mystique->type == MGA_2064W || mystique->type == MGA_2164W) {
                 tvp3026_ramdac_out(addr, 0, 0, val, svga->ramdac, svga);
+                return;
+            }
+            if (addr == 0x3c9) {
+                mystique_paldata_write(mystique, val);
                 return;
             }
             break;
@@ -951,6 +975,8 @@ mystique_in(uint16_t addr, void *priv)
         case 0x3c9:
             if (mystique->type == MGA_2064W || mystique->type == MGA_2164W)
                 temp = tvp3026_ramdac_in(addr, 0, 0, svga->ramdac, svga);
+            else if (addr == 0x3c9)
+                temp = mystique_paldata_read(mystique);
             else
                 temp = svga_in(addr, svga);
             break;
@@ -1651,7 +1677,6 @@ mystique_write_xreg(mystique_t *mystique, int reg, uint8_t val)
 
         case XREG_XMISCCTRL:
             mystique->xmiscctrl = val;
-            svga_set_ramdac_type(svga, (val & XMISCCTRL_VGA8DAC) ? RAMDAC_8BIT : RAMDAC_6BIT);
             if (mystique->crtcext_regs[3] & CRTCX_R3_MGAMODE)
                 svga->lut_map       = !!(mystique->xmiscctrl & XMISCCTRL_RAMCS);
             break;
@@ -2024,7 +2049,7 @@ mystique_ctrl_read_b(uint32_t addr, void *priv)
                 ret = svga_in(0x3c8, svga);
                 break;
             case REG_PALDATA:
-                ret = svga_in(0x3c9, svga);
+                ret = mystique_paldata_read(mystique);
                 break;
             case REG_PIXRDMSK:
                 ret = svga_in(0x3c6, svga);
@@ -2676,7 +2701,7 @@ mystique_ctrl_write_b(uint32_t addr, uint8_t val, void *priv)
             mystique->xreg_idx = val;
             break;
         case REG_PALDATA:
-            svga_out(0x3c9, val, svga);
+            mystique_paldata_write(mystique, val);
             break;
         case REG_PIXRDMSK:
             svga_out(0x3c6, val, svga);
@@ -7889,6 +7914,9 @@ mystique_init(const device_t *info)
         mystique->svga.getclock  = mystique_getclock;
         if (mystique->type == MGA_G100)
             mystique->svga.decode_mask = 0xffffff;
+        /*The palette RAM is 8 bits per component whatever vga8dac says; the
+          6-bit conversion is done on the PALDATA transfer.*/
+        svga_set_ramdac_type(&mystique->svga, RAMDAC_8BIT);
     }
 
     io_sethandler(0x03a0, 0x0040, mystique_in, NULL, NULL, mystique_out, NULL, NULL, mystique);
