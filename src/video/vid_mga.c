@@ -7654,9 +7654,17 @@ mystique_pci_write(UNUSED(int func), int addr, UNUSED(int len), uint8_t val, voi
 
         /* 2064W: <23:22> <15:13> <11:9> <7:0> are reserved and read 0. 1064SG: the unimem
            strap <15> is read-only 0. productid <28:24> is a read-only strap on the 2064W,
-           1064SG and 2164W. */
+           1064SG and 2164W. The G100 fmclkdiv <7>, mrmoption <22> and the 2064W / 2164W
+           nogscale <21> are R/W with no emulated clock behind them; drivers read-modify-write
+           OPTION, so they are held. pllsel <6> is not. */
         case 0x40:
-            mystique->pci_regs[0x40] = (mystique->type == MGA_2064W) ? 0x00 : (val & 0x3f);
+            if (mystique->type == MGA_2064W)
+                val = 0x00;
+            else if (mystique->type == MGA_G100)
+                val &= 0xbf;
+            else
+                val &= 0x3f;
+            mystique->pci_regs[0x40] = val;
             break;
         case 0x41:
             if (mystique->type == MGA_2064W)
@@ -7666,7 +7674,13 @@ mystique_pci_write(UNUSED(int func), int addr, UNUSED(int len), uint8_t val, voi
             mystique->pci_regs[0x41] = val;
             break;
         case 0x42:
-            mystique->pci_regs[0x42] = val & 0x1f;
+            if (mystique->type == MGA_G100)
+                val &= 0x5f;
+            else if ((mystique->type == MGA_2064W) || (mystique->type == MGA_2164W))
+                val &= 0x3f;
+            else
+                val &= 0x1f;
+            mystique->pci_regs[0x42] = val;
             break;
         case 0x43:
             if ((mystique->type == MGA_2064W) || (mystique->type == MGA_1064SG) || (mystique->type == MGA_2164W))
