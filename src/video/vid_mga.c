@@ -1641,12 +1641,16 @@ mystique_write_xreg(mystique_t *mystique, int reg, uint8_t val)
     svga_t *svga = &mystique->svga;
 
     switch (reg) {
+        /* The base takes effect immediately: the latched map pointer, which the draw
+           advances one line at a time, moves with it and keeps its line offset. */
         case XREG_XCURADDL:
             mystique->cursor.addr = (mystique->cursor.addr & 0x1f00) | val;
+            svga->hwcursor_latch.addr += (mystique->cursor.addr << 10) - svga->hwcursor.addr;
             svga->hwcursor.addr   = mystique->cursor.addr << 10;
             break;
         case XREG_XCURADDH:
             mystique->cursor.addr = (mystique->cursor.addr & 0x00ff) | ((val & 0x1f) << 8);
+            svga->hwcursor_latch.addr += (mystique->cursor.addr << 10) - svga->hwcursor.addr;
             svga->hwcursor.addr   = mystique->cursor.addr << 10;
             break;
 
