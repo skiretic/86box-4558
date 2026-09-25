@@ -3994,6 +3994,16 @@ bitop(uint32_t src, uint32_t dst, const mystique_t *mystique)
     return plnwt(bitop_raw(src, dst, mystique->dwgreg.dwgctrl_running), dst, mystique->dwgreg.plnwt);
 }
 
+/*Block mode ignores bop. RPL applies it: the bops it allows (0, ~S, S, 1)
+  are the ones that do not depend on the destination.*/
+static uint32_t
+trap_rpl_pixel(const mystique_t *mystique, uint32_t src, uint32_t dst)
+{
+    if ((mystique->dwgreg.dwgctrl_running & DWGCTRL_ATYPE_MASK) == DWGCTRL_ATYPE_BLK)
+        return plnwt(src, dst, mystique->dwgreg.plnwt);
+    return bitop(src, dst, mystique);
+}
+
 /*The alpha bits of a destination pixel come from FCOL, never from the
   interpolated, textured or host color, and only where the pixel has room for
   them: all four bits 31:24 at 32 bpp, bit 15 at 16 bpp with dit555 set. The
@@ -5691,23 +5701,23 @@ blit_trap(mystique_t *mystique)
                         if (!transc || pattern)
                         switch (mystique->maccess_running & MACCESS_PWIDTH_MASK) {
                             case MACCESS_PWIDTH_8:
-                                svga->vram[(mystique->dwgreg.ydst_lin + x_l) & mystique->vram_mask]                = plnwt(pattern ? mystique->dwgreg.fcol : mystique->dwgreg.bcol, svga->vram[(mystique->dwgreg.ydst_lin + x_l) & mystique->vram_mask], mystique->dwgreg.plnwt) & 0xff;
+                                svga->vram[(mystique->dwgreg.ydst_lin + x_l) & mystique->vram_mask]                = trap_rpl_pixel(mystique, pattern ? mystique->dwgreg.fcol : mystique->dwgreg.bcol, svga->vram[(mystique->dwgreg.ydst_lin + x_l) & mystique->vram_mask]) & 0xff;
                                 svga->changedvram[((mystique->dwgreg.ydst_lin + x_l) & mystique->vram_mask) >> 12] = changeframecount;
                                 break;
 
                             case MACCESS_PWIDTH_16:
-                                ((uint16_t *) svga->vram)[(mystique->dwgreg.ydst_lin + x_l) & mystique->vram_mask_w] = plnwt(pattern ? mystique->dwgreg.fcol : mystique->dwgreg.bcol, ((uint16_t *) svga->vram)[(mystique->dwgreg.ydst_lin + x_l) & mystique->vram_mask_w], mystique->dwgreg.plnwt) & 0xffff;
+                                ((uint16_t *) svga->vram)[(mystique->dwgreg.ydst_lin + x_l) & mystique->vram_mask_w] = trap_rpl_pixel(mystique, pattern ? mystique->dwgreg.fcol : mystique->dwgreg.bcol, ((uint16_t *) svga->vram)[(mystique->dwgreg.ydst_lin + x_l) & mystique->vram_mask_w]) & 0xffff;
                                 svga->changedvram[((mystique->dwgreg.ydst_lin + x_l) & mystique->vram_mask_w) >> 11] = changeframecount;
                                 break;
 
                             case MACCESS_PWIDTH_24:
                                 dst                                                                                        = *(uint32_t *) (&svga->vram[((mystique->dwgreg.ydst_lin + x_l) * 3) & mystique->vram_mask]) & 0xff000000;
-                                *(uint32_t *) (&svga->vram[((mystique->dwgreg.ydst_lin + x_l) * 3) & mystique->vram_mask]) = (plnwt(pattern ? mystique->dwgreg.fcol : mystique->dwgreg.bcol, *(uint32_t *) (&svga->vram[((mystique->dwgreg.ydst_lin + x_l) * 3) & mystique->vram_mask]), mystique->dwgreg.plnwt) & 0xffffff) | dst;
+                                *(uint32_t *) (&svga->vram[((mystique->dwgreg.ydst_lin + x_l) * 3) & mystique->vram_mask]) = (trap_rpl_pixel(mystique, pattern ? mystique->dwgreg.fcol : mystique->dwgreg.bcol, *(uint32_t *) (&svga->vram[((mystique->dwgreg.ydst_lin + x_l) * 3) & mystique->vram_mask])) & 0xffffff) | dst;
                                 svga->changedvram[(((mystique->dwgreg.ydst_lin + x_l) * 3) & mystique->vram_mask) >> 12]   = changeframecount;
                                 break;
 
                             case MACCESS_PWIDTH_32:
-                                ((uint32_t *) svga->vram)[(mystique->dwgreg.ydst_lin + x_l) & mystique->vram_mask_l] = plnwt(pattern ? mystique->dwgreg.fcol : mystique->dwgreg.bcol, ((uint32_t *) svga->vram)[(mystique->dwgreg.ydst_lin + x_l) & mystique->vram_mask_l], mystique->dwgreg.plnwt);
+                                ((uint32_t *) svga->vram)[(mystique->dwgreg.ydst_lin + x_l) & mystique->vram_mask_l] = trap_rpl_pixel(mystique, pattern ? mystique->dwgreg.fcol : mystique->dwgreg.bcol, ((uint32_t *) svga->vram)[(mystique->dwgreg.ydst_lin + x_l) & mystique->vram_mask_l]);
                                 svga->changedvram[((mystique->dwgreg.ydst_lin + x_l) & mystique->vram_mask_l) >> 10] = changeframecount;
                                 break;
 
