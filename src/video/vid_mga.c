@@ -7279,6 +7279,9 @@ mystique_pci_read(UNUSED(int func), int addr, UNUSED(int len), void *priv)
 
             case 0x06:
                 ret = PCI_STATUS_L_FAST_B2B | (mystique->is_agp ? PCI_STATUS_L_CAPAB : 0);
+                /* cap66mhz is forced to 1 on the 2164W-AGP only; reserved on the G100-AGP. */
+                if (mystique->is_agp && (mystique->type == MGA_2164W))
+                    ret |= PCI_STATUS_L_66MHZ;
                 break;
             case 0x07:
                 ret = mystique->pci_regs[0x07];
