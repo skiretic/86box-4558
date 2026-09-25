@@ -1067,7 +1067,11 @@ svga_recalctimings(svga_t *svga)
         svga->y_add = svga->vtotal - svga->vblankend - 1;
         svga->monitor->mon_overscan_y = svga->y_add + abs(svga->vblankstart - svga->dispend);
 
-        if ((svga->dispend >= 2048) || (svga->y_add < 0)) {
+        /* Rendered lines are displine + y_add (doubled for line doubling or interlace)
+           and must stay inside the 2048-line target buffer; a 12-bit vtotal (Matrox
+           CRTCEXT2) can put the border far past it. */
+        if ((svga->dispend >= 2048) || (svga->y_add < 0) ||
+            (((svga->y_add + svga->dispend) << ((svga->vertical_linedbl || svga->interlace) ? 1 : 0)) >= 2048)) {
             svga->y_add = 0;
             svga->monitor->mon_overscan_y = 0;
         }
