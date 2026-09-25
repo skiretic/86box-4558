@@ -1811,9 +1811,11 @@ mystique_ctrl_read_b(uint32_t addr, void *priv)
     } else
         switch (addr & 0x3fff) {
             case REG_FIFOSTATUS:
-                fifocount = FIFO_SIZE - FIFO_ENTRIES;
-                if (fifocount > (mystique->type <= MGA_1064SG ? 32 : 64))
-                    fifocount = (mystique->type <= MGA_1064SG ? 32 : 64);
+                /* Free locations of the chip's Bus FIFO; the software queue is
+                   deeper, so anything past the chip depth reads as full. */
+                fifocount = (mystique->type <= MGA_1064SG ? 32 : 64) - FIFO_ENTRIES;
+                if (fifocount < 0)
+                    fifocount = 0;
                 ret = fifocount;
                 break;
             case REG_FIFOSTATUS + 1:
