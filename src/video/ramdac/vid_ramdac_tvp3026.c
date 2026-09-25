@@ -744,10 +744,12 @@ tvp3026_getclock(int clock, void *priv)
     float                   f_vco;
     float                   f_pll;
 
+    /*PLLSEL 0x selects the pixel PLL's fixed VGA settings, which the part derives
+      from the 14.318 MHz reference: 25.057 and 28.636 MHz, not 25.175 / 28.322.*/
     if (clock == 0)
-        return 25175000.0f;
+        return 25057000.0f;
     if (clock == 1)
-        return 28322000.0f;
+        return 28636000.0f;
 
     /*Fvco = 8 x Fref x (65 - M) / (65 - N)*/
     /*Fpll = Fvco / 2^P*/
