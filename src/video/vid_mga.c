@@ -1729,15 +1729,19 @@ mystique_write_xreg(mystique_t *mystique, int reg, uint8_t val)
             svga_recalctimings(svga);
             break;
 
+        /* A write to the set clksel selects changes the clock by itself. */
         case XREG_XPIXPLLCM:
             mystique->xpixpll[2].m = val;
+            svga_recalctimings(svga);
             break;
         case XREG_XPIXPLLCN:
             mystique->xpixpll[2].n = val;
+            svga_recalctimings(svga);
             break;
         case XREG_XPIXPLLCP:
             mystique->xpixpll[2].p = val & 7;
             mystique->xpixpll[2].s = (val >> 3) & 3;
+            svga_recalctimings(svga);
             break;
 
         case 0x00:
