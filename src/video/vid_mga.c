@@ -7650,16 +7650,25 @@ mystique_pci_write(UNUSED(int func), int addr, UNUSED(int len), uint8_t val, voi
             mystique->int_line = val;
             return;
 
+        /* 2064W: <23:22> <15:13> <11:9> <7:0> are reserved and read 0. 1064SG: the unimem
+           strap <15> is read-only 0. productid <28:24> is a read-only strap on the 2064W,
+           1064SG and 2164W. */
         case 0x40:
-            mystique->pci_regs[0x40] = val & 0x3f;
+            mystique->pci_regs[0x40] = (mystique->type == MGA_2064W) ? 0x00 : (val & 0x3f);
             break;
         case 0x41:
+            if (mystique->type == MGA_2064W)
+                val &= 0x11;
+            else if (mystique->type == MGA_1064SG)
+                val &= 0x7f;
             mystique->pci_regs[0x41] = val;
             break;
         case 0x42:
             mystique->pci_regs[0x42] = val & 0x1f;
             break;
         case 0x43:
+            if ((mystique->type == MGA_2064W) || (mystique->type == MGA_1064SG) || (mystique->type == MGA_2164W))
+                val = (val & 0xe0) | (mystique->pci_regs[0x43] & 0x1f);
             mystique->pci_regs[0x43] = val;
             mystique_bios_rom_mapping(mystique);
             break;
