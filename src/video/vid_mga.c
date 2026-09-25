@@ -7477,6 +7477,11 @@ mystique_pci_read(UNUSED(int func), int addr, UNUSED(int len), void *priv)
                 ret  = mystique_ctrl_read_b(addr, mystique);
                 break;
 
+            case 0x50:
+            case 0x51:
+                ret = mystique->pci_regs[addr];
+                break;
+
             case 0xdc:
                 ret = 0x01;
                 break;
@@ -7695,6 +7700,18 @@ mystique_pci_write(UNUSED(int func), int addr, UNUSED(int len), uint8_t val, voi
         case 0x4f:
             if (mystique->type != MGA_2064W)
                 mystique->pci_regs[addr - 0x20] = val;
+            break;
+
+        /* G100 OPTION2: memrclkd <3:0>, eepromwt <8>, mbuftype <13:12>. None has an
+           emulated effect, but the driver read-modify-writes the register after the
+           VBIOS sets memrclkd, so the fields are held. */
+        case 0x50:
+            if (mystique->type == MGA_G100)
+                mystique->pci_regs[0x50] = val & 0x0f;
+            break;
+        case 0x51:
+            if (mystique->type == MGA_G100)
+                mystique->pci_regs[0x51] = val & 0x31;
             break;
 
         case 0x44:
