@@ -1769,6 +1769,7 @@ mystique_ctrl_read_b(uint32_t addr, void *priv)
                 ret = fifocount;
                 break;
             case REG_FIFOSTATUS + 1:
+                ret = 0;
                 if (FIFO_EMPTY)
                     ret |= 2;
                 else if (FIFO_ENTRIES >= (mystique->type <= MGA_1064SG ? 32 : 64))
