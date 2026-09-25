@@ -1598,8 +1598,9 @@ svga_poll(void *priv)
         if (svga->hsync_divisor && (svga->crtc[0x17] & 4))
             return;
 
+        /* 12 bits: some CRTCs (Matrox CRTCEXT2) extend vtotal and friends past 7FFh. */
         svga->vc++;
-        svga->vc &= 0x7ff;
+        svga->vc &= 0xfff;
 
         if (svga->vc == svga->split) {
             ret = 1;
