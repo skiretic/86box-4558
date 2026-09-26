@@ -5576,37 +5576,30 @@ blit_line(mystique_t *mystique, int closed, int autoline)
                 else
                     mystique->dwgreg.ydst_lin += (mystique->dwgreg.sgn.sdy ? -(mystique->dwgreg.pitch & PITCH_MASK) : (mystique->dwgreg.pitch & PITCH_MASK));
 
-                if (mystique->maccess_running & MACCESS_ZWIDTH) {
-                    mystique->dwgreg.extended_dr[0] += mystique->dwgreg.extended_dr[2];
-                    mystique->dwgreg.dr[0] = (mystique->dwgreg.extended_dr[0] >> 16) & 0xFFFFFFFF;
-                } else {
-                    mystique->dwgreg.dr[0] += mystique->dwgreg.dr[2];
-                    mystique->dwgreg.extended_dr[0] = (uint64_t) mystique->dwgreg.dr[0] << 16ull;
-                }
-                mystique->dwgreg.dr[4] += mystique->dwgreg.dr[6];
-                mystique->dwgreg.dr[8] += mystique->dwgreg.dr[10];
-                mystique->dwgreg.dr[12] += mystique->dwgreg.dr[14];
-
-                if (mystique->dwgreg.err >= 0) {
+                /*A step is either axial or diagonal. Like the error term (AR0 or
+                  AR2, never both), z and colour take the major-axis increment
+                  (DR2/6/10/14) or the diagonal one (DR3/7/11/15), not the sum.*/
+                int diag = mystique->dwgreg.err >= 0;
+                if (diag) {
                     mystique->dwgreg.err += mystique->dwgreg.k2;
 
                     if (mystique->dwgreg.sgn.sdydxl)
                         mystique->dwgreg.ydst_lin += (mystique->dwgreg.sgn.sdy ? -(mystique->dwgreg.pitch & PITCH_MASK) : (mystique->dwgreg.pitch & PITCH_MASK));
                     else
                         x += (mystique->dwgreg.sgn.sdxl ? -1 : 1);
-
-                    if (mystique->maccess_running & MACCESS_ZWIDTH) {
-                        mystique->dwgreg.extended_dr[0] += mystique->dwgreg.extended_dr[3];
-                        mystique->dwgreg.dr[0] = (mystique->dwgreg.extended_dr[0] >> 16) & 0xFFFFFFFF;
-                    } else {
-                        mystique->dwgreg.dr[0] += mystique->dwgreg.dr[3];
-                        mystique->dwgreg.extended_dr[0] = (uint64_t) mystique->dwgreg.dr[0] << 16ull;
-                    }
-                    mystique->dwgreg.dr[4] += mystique->dwgreg.dr[7];
-                    mystique->dwgreg.dr[8] += mystique->dwgreg.dr[11];
-                    mystique->dwgreg.dr[12] += mystique->dwgreg.dr[15];
                 } else
                     mystique->dwgreg.err += mystique->dwgreg.k1;
+
+                if (mystique->maccess_running & MACCESS_ZWIDTH) {
+                    mystique->dwgreg.extended_dr[0] += mystique->dwgreg.extended_dr[diag ? 3 : 2];
+                    mystique->dwgreg.dr[0] = (mystique->dwgreg.extended_dr[0] >> 16) & 0xFFFFFFFF;
+                } else {
+                    mystique->dwgreg.dr[0] += mystique->dwgreg.dr[diag ? 3 : 2];
+                    mystique->dwgreg.extended_dr[0] = (uint64_t) mystique->dwgreg.dr[0] << 16ull;
+                }
+                mystique->dwgreg.dr[4] += mystique->dwgreg.dr[diag ? 7 : 6];
+                mystique->dwgreg.dr[8] += mystique->dwgreg.dr[diag ? 11 : 10];
+                mystique->dwgreg.dr[12] += mystique->dwgreg.dr[diag ? 15 : 14];
 
                 mystique->dwgreg.length--;
             }
