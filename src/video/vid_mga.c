@@ -534,6 +534,9 @@ typedef struct mystique_t {
 
     int vram_size, crtcext_idx, xreg_idx, xzoomctrl;
 
+    /* The depth's renderer under the hzoom wrapper. */
+    void (*render_hzoom_base)(svga_t *svga);
+
     atomic_int busy, blitter_submit_refcount,
         blitter_submit_dma_refcount, blitter_complete_refcount,
         endprdmasts_pending, softrap_pending,
@@ -1141,6 +1144,32 @@ mystique_render_blank(svga_t *svga)
         memset(&svga->monitor->target_buffer->line[y][svga->x_add], 0, svga->hdisp * sizeof(uint32_t));
 }
 
+/*hzoom replicates each pixel in the DAC and slows the address counter by
+  the same factor: fetch hdisp / zoom pixels, then widen the line in place.
+  A line the base renderer skipped (unchanged) already holds the wide copy.*/
+static void
+mystique_render_hzoom(svga_t *svga)
+{
+    mystique_t *mystique = (mystique_t *) svga->priv;
+    const int   shift    = (mystique->xzoomctrl == 3) ? 2 : 1;
+    const int   hdisp    = svga->hdisp;
+    const int   last     = svga->lastline_draw;
+    uint32_t   *p;
+
+    svga->lastline_draw = -1;
+    svga->hdisp         = hdisp >> shift;
+    mystique->render_hzoom_base(svga);
+    svga->hdisp = hdisp;
+    if (svga->lastline_draw != svga->displine) {
+        svga->lastline_draw = last;
+        return;
+    }
+
+    p = &svga->monitor->target_buffer->line[svga->displine + svga->y_add][svga->x_add];
+    for (int x = hdisp - 1; x > 0; x--)
+        p[x] = p[x >> shift];
+}
+
 void
 mystique_recalctimings(svga_t *svga)
 {
@@ -1261,6 +1290,11 @@ mystique_recalctimings(svga_t *svga)
 
                     default:
                         break;
+                }
+                /*hzoom 10 is reserved: left at 1x.*/
+                if ((mystique->xzoomctrl == 1) || (mystique->xzoomctrl == 3)) {
+                    mystique->render_hzoom_base = svga->render;
+                    svga->render                = mystique_render_hzoom;
                 }
             } else {
                 switch (svga->bpp) {
@@ -1729,6 +1763,8 @@ mystique_write_xreg(mystique_t *mystique, int reg, uint8_t val)
 
         case XREG_XZOOMCTRL:
             mystique->xzoomctrl = val & 3;
+            svga->fullchange    = svga->monitor->mon_changeframecount;
+            svga_recalctimings(svga);
             break;
 
         case XREG_XSENSETEST:
