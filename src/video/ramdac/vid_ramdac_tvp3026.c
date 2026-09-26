@@ -54,6 +54,7 @@ typedef struct tvp3026_ramdac_t {
     uint8_t  pll_addr;
     uint8_t  clock_sel;
     uint8_t  color_key_ctrl;
+    uint8_t  color_key[8]; /*30h-37h: overlay, red, green, blue; low then high*/
     struct {
         uint8_t m;
         uint8_t n;
@@ -315,6 +316,9 @@ tvp3026_ramdac_out(uint16_t addr, int rs2, int rs3, uint8_t val, void *priv, svg
                     }
                     ramdac->pll_addr = ((ramdac->pll_addr + 0x10) & 0x30) | (ramdac->pll_addr & 0xcf);
                     break;
+                case 0x30 ... 0x37: /* Color-Key Overlay/Red/Green/Blue Low and High */
+                    ramdac->color_key[ramdac->ind_idx & 7] = val;
+                    break;
                 case 0x38: /* Color-Key Control */
                     ramdac->color_key_ctrl = val;
                     break;
@@ -513,6 +517,9 @@ tvp3026_ramdac_in(uint16_t addr, int rs2, int rs3, void *priv, svga_t *svga)
                         default:
                             break;
                     }
+                    break;
+                case 0x30 ... 0x37: /* Color-Key Overlay/Red/Green/Blue Low and High */
+                    temp = ramdac->color_key[ramdac->ind_idx & 7];
                     break;
                 case 0x38: /* Color-Key Control */
                     temp = ramdac->color_key_ctrl;
