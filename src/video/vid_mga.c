@@ -5813,12 +5813,8 @@ blit_trap(mystique_t *mystique)
                 int16_t              x_l   = mystique->dwgreg.fxleft & 0xffff;
                 int16_t              x_r   = mystique->dwgreg.fxright & 0xffff;
                 int                  yoff  = (mystique->dwgreg.yoff + mystique->dwgreg.ydst) & 7;
-                int                  len;
-
-                if (x_l > x_r)
-                    len = x_l - x_r;
-                else
-                    len = x_r - x_l;
+                /*A line covers fxleft <= x < fxright: none when the edges cross.*/
+                int                  len   = x_r - x_l;
 
                 while (len > 0) {
                     if (x_l >= mystique->dwgreg.cxleft && x_l <= mystique->dwgreg.cxright && mystique->dwgreg.ydst_lin >= mystique->dwgreg.ytop && mystique->dwgreg.ydst_lin <= mystique->dwgreg.ybot && trans[x_l & 3]) {
@@ -5887,12 +5883,8 @@ blit_trap(mystique_t *mystique)
                 int16_t              x_l   = mystique->dwgreg.fxleft & 0xffff;
                 int16_t              x_r   = mystique->dwgreg.fxright & 0xffff;
                 int                  yoff  = (mystique->dwgreg.yoff + mystique->dwgreg.ydst) & 7;
-                int                  len;
-
-                if (x_l > x_r)
-                    len = x_l - x_r;
-                else
-                    len = x_r - x_l;
+                /*A line covers fxleft <= x < fxright: none when the edges cross.*/
+                int                  len   = x_r - x_l;
 
                 while (len > 0) {
                     if (x_l >= mystique->dwgreg.cxleft && x_l <= mystique->dwgreg.cxright && mystique->dwgreg.ydst_lin >= mystique->dwgreg.ytop && mystique->dwgreg.ydst_lin <= mystique->dwgreg.ybot && trans[x_l & 3]) {
