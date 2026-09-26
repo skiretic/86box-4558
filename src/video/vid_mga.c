@@ -8090,6 +8090,8 @@ mystique_init(const device_t *info)
           6-bit conversion is done on the PALDATA transfer.*/
         svga_set_ramdac_type(&mystique->svga, RAMDAC_8BIT);
     }
+    /*The pixel read mask resets to FFh on the integrated DAC and on the TVP3026.*/
+    mystique->svga.dac_mask = 0xff;
 
     io_sethandler(0x03a0, 0x0040, mystique_in, NULL, NULL, mystique_out, NULL, NULL, mystique);
     mem_mapping_add(&mystique->ctrl_mapping, 0, 0,
