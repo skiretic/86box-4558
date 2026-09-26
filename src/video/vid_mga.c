@@ -304,6 +304,7 @@
 #define DWGCTRL_OPCODE_LINE_CLOSE     (0x2 << 0)
 #define DWGCTRL_OPCODE_AUTOLINE_CLOSE (0x3 << 0)
 #define DWGCTRL_OPCODE_TRAP           (0x4 << 0)
+#define DWGCTRL_OPCODE_TRAP_ILOAD     (0x5 << 0)
 #define DWGCTRL_OPCODE_TEXTURE_TRAP   (0x6 << 0)
 #define DWGCTRL_OPCODE_ILOAD_HIGH     (0x7 << 0)
 #define DWGCTRL_OPCODE_BITBLT         (0x8 << 0)
@@ -442,13 +443,14 @@ enum {
     MGA_G100,  /*Productiva G100*/
 };
 
-/*Legal DWGCTL opcodes per chip; bit n = opcode n. Opcodes 5 and 11 are
-  reserved everywhere. IDUMP and FBITBLT are reserved on the G100, FBITBLT on
-  the 1064SG, and the texture trap, ILOAD_HIGH and ILOAD_HIGHV on the 2064W.*/
-#define MGA_OPS_ALL     0xf7df
-#define MGA_OPS_2064W   0xb71f
-#define MGA_OPS_1064SG  0xe7df
-#define MGA_OPS_G100    0xe3df
+/*Legal DWGCTL opcodes per chip; bit n = opcode n. Opcode 11 is reserved
+  everywhere; 5 is the host-data trapezoid on all four (the 2064W calls it
+  TEXTURE_TRAP). IDUMP and FBITBLT are reserved on the G100, FBITBLT on the
+  1064SG, and the texture trap, ILOAD_HIGH and ILOAD_HIGHV on the 2064W.*/
+#define MGA_OPS_ALL     0xf7ff
+#define MGA_OPS_2064W   0xb73f
+#define MGA_OPS_1064SG  0xe7ff
+#define MGA_OPS_G100    0xe3ff
 
 /*What each chip has. The 1164SG has no specification in the corpus; it is
   given the 1064SG's row, which is an assumption, not a documented fact.*/
@@ -618,6 +620,13 @@ typedef struct mystique_t {
         mutex_t *lock;
     } dma;
 
+    /*TRAP_ILOAD: the trapezoid's pixels, taken from the host until all of
+      them have arrived, then drawn in one scan.*/
+    struct {
+        uint32_t *buf;
+        uint32_t  want, have, pos;
+    } trap_host;
+
     uint8_t thread_run;
 
     void *i2c, *i2c_ddc, *ddc;
@@ -765,6 +774,7 @@ static void mystique_recalc_mapping(mystique_t *mystique);
 static void mystique_update_dpms(mystique_t *mystique);
 static void mystique_2064w_start_latch(mystique_t *mystique);
 static int  mystique_line_compare(svga_t *svga);
+static void blit_trap_iload_data(mystique_t *mystique, uint32_t data);
 
 static uint8_t  mystique_iload_read_b(uint32_t addr, void *priv);
 static uint32_t mystique_iload_read_l(uint32_t addr, void *priv);
@@ -5357,6 +5367,10 @@ blit_iload_write(mystique_t *mystique, uint32_t data, int size)
             blit_iload_iload_highv(mystique, data, size);
             break;
 
+        case DWGCTRL_OPCODE_TRAP_ILOAD:
+            blit_trap_iload_data(mystique, data);
+            break;
+
         default:
             mystique_unimpl("blit_iload_write: bad opcode %08x\n", mystique->dwgreg.dwgctrl_running);
             if (mystique->busy) {
@@ -5916,6 +5930,10 @@ blit_trap(mystique_t *mystique)
                 b_back = mystique->dwgreg.dr[12];
 
                 while (x_l != x_r) {
+                    /*A TRAP_ILOAD pixel takes its host dword whether or not it is
+                      written (the host sends the whole trapezoid).*/
+                    uint32_t host_px = mystique->trap_host.buf ? mystique->trap_host.buf[mystique->trap_host.pos++] : 0;
+
                     if (x_l >= mystique->dwgreg.cxleft && x_l <= mystique->dwgreg.cxright && mystique->dwgreg.ydst_lin >= mystique->dwgreg.ytop && mystique->dwgreg.ydst_lin <= mystique->dwgreg.ybot && trans[x_l & 3]) {
                         bool z_check_pass = false;
                         if (mystique->maccess_running & MACCESS_ZWIDTH) {
@@ -5935,12 +5953,18 @@ blit_trap(mystique_t *mystique)
                             int      g = 0;
                             int      b = 0;
 
-                            if (!(mystique->dwgreg.dr[4] & (1 << 23)))
-                                r = (mystique->dwgreg.dr[4] >> 15) & 0xff;
-                            if (!(mystique->dwgreg.dr[8] & (1 << 23)))
-                                g = (mystique->dwgreg.dr[8] >> 15) & 0xff;
-                            if (!(mystique->dwgreg.dr[12] & (1 << 23)))
-                                b = (mystique->dwgreg.dr[12] >> 15) & 0xff;
+                            if (mystique->trap_host.buf) {
+                                r = (host_px >> 16) & 0xff;
+                                g = (host_px >> 8) & 0xff;
+                                b = host_px & 0xff;
+                            } else {
+                                if (!(mystique->dwgreg.dr[4] & (1 << 23)))
+                                    r = (mystique->dwgreg.dr[4] >> 15) & 0xff;
+                                if (!(mystique->dwgreg.dr[8] & (1 << 23)))
+                                    g = (mystique->dwgreg.dr[8] >> 15) & 0xff;
+                                if (!(mystique->dwgreg.dr[12] & (1 << 23)))
+                                    b = (mystique->dwgreg.dr[12] >> 15) & 0xff;
+                            }
 
                             if (z_write) {
                                 if (mystique->maccess_running & MACCESS_ZWIDTH) {
@@ -6048,6 +6072,79 @@ blit_trap(mystique_t *mystique)
     }
 
     mystique->blitter_complete_refcount++;
+}
+
+/*How many pixels blit_trap's I/ZI scan will visit: the same edge stepping on
+  copies of the registers, without drawing.*/
+static uint32_t
+trap_pixel_count(const mystique_t *mystique)
+{
+    int16_t  fxleft  = mystique->dwgreg.fxleft;
+    int16_t  fxright = mystique->dwgreg.fxright;
+    int32_t  ar1     = mystique->dwgreg.ar[1];
+    int32_t  ar4     = mystique->dwgreg.ar[4];
+    uint32_t count   = 0;
+
+    for (int y = 0; y < mystique->dwgreg.length; y++) {
+        count += abs((int16_t) (fxright - fxleft));
+
+        while (ar1 < 0 && mystique->dwgreg.ar[0]) {
+            ar1 += mystique->dwgreg.ar[0];
+            fxleft += (mystique->dwgreg.sgn.sdxl ? -1 : 1);
+        }
+        ar1 += mystique->dwgreg.ar[2];
+
+        while (ar4 < 0 && mystique->dwgreg.ar[6]) {
+            ar4 += mystique->dwgreg.ar[6];
+            fxright += (mystique->dwgreg.sgn.sdxr ? -1 : 1);
+        }
+        ar4 += mystique->dwgreg.ar[5];
+    }
+    return count;
+}
+
+/*TRAP_ILOAD: a Gouraud-trapezoid scan whose pixel colours come from the host,
+  one dword per pixel in scan order. The packed 24-bit formats' layout across
+  trapezoid lines is not documented.*/
+static void
+blit_trap_iload(mystique_t *mystique)
+{
+    uint32_t atype  = mystique->dwgreg.dwgctrl_running & DWGCTRL_ATYPE_MASK;
+    uint32_t bltmod = mystique->dwgreg.dwgctrl_running & DWGCTRL_BLTMOD_MASK;
+
+    if ((atype != DWGCTRL_ATYPE_I && atype != DWGCTRL_ATYPE_ZI) || (bltmod != DWGCTRL_BLTMOD_BU32RGB && bltmod != DWGCTRL_BLTMOD_BU32BGR)) {
+        mystique_unimpl("TRAP_ILOAD atype %03x bltmod %08x\n", atype, bltmod);
+        mystique->blitter_complete_refcount++;
+        return;
+    }
+
+    mystique->trap_host.want = trap_pixel_count(mystique);
+    mystique->trap_host.have = 0;
+    mystique->trap_host.pos  = 0;
+    if (!mystique->trap_host.want) {
+        mystique->blitter_complete_refcount++;
+        return;
+    }
+    mystique->trap_host.buf  = realloc(mystique->trap_host.buf, mystique->trap_host.want * sizeof(uint32_t));
+    mystique->dwgreg.words   = 0;
+    mystique->busy           = 1;
+}
+
+static void
+blit_trap_iload_data(mystique_t *mystique, uint32_t data)
+{
+    uint32_t *buf = mystique->trap_host.buf;
+
+    if ((mystique->dwgreg.dwgctrl_running & DWGCTRL_BLTMOD_MASK) == DWGCTRL_BLTMOD_BU32BGR)
+        data = (data & 0xff00ff00) | ((data >> 16) & 0xff) | ((data & 0xff) << 16);
+    buf[mystique->trap_host.have++] = data;
+    if (mystique->trap_host.have < mystique->trap_host.want)
+        return;
+
+    mystique->busy = 0;
+    blit_trap(mystique);
+    mystique->trap_host.buf = NULL;
+    free(buf);
 }
 
 static uint16_t texture_texel_fetch(mystique_t *mystique, int *tex_r, int *tex_g, int *tex_b, int *tex_a, int *atransp, int s, int t, int tex_pitch)
@@ -7262,6 +7359,10 @@ mystique_start_blit(mystique_t *mystique)
             blit_trap(mystique);
             break;
 
+        case DWGCTRL_OPCODE_TRAP_ILOAD:
+            blit_trap_iload(mystique);
+            break;
+
         case DWGCTRL_OPCODE_TEXTURE_TRAP:
             blit_texture_trap(mystique);
             break;
@@ -8094,6 +8195,7 @@ mystique_close(void *priv)
     i2c_gpio_close(mystique->i2c_ddc);
     i2c_gpio_close(mystique->i2c);
 
+    free(mystique->trap_host.buf);
     free(mystique);
 }
 
