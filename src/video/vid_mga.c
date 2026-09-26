@@ -579,6 +579,11 @@ typedef struct mystique_t {
             ta_key, ta_mask, lastpix_r, lastpix_g,
             lastpix_b, highv_line, beta, dither, err, k1, k2;
 
+        /* ILOAD_HIQH(V): source pixels received on this line, the next
+           destination pixel's source position and the line's start (16.16). */
+        int     hiqh_src;
+        int32_t hiqh_pos, hiqh_pos_line;
+
         bool pattern[8][16];
 
         uint32_t dwgctrl, dwgctrl_running, bcol, fcol,
@@ -5172,11 +5177,91 @@ blit_iload_iload_scale(mystique_t *mystique, uint32_t data, int size)
     }
 }
 
+/*One source pixel of ILOAD_HIQH(V). Destination pixel i sits at source
+  position p = AR6 + 1.0 - AR2 + i * AR2, which with the 5-65 values is 0 at
+  the first pixel and SRC - 1 at the last; it is src[s] and src[s + 1] mixed
+  by p<15:12> (s = floor(p)), written once both have arrived. Returns nonzero
+  when the rest of the host dword is to be dropped (line end, or PW8).*/
+static int
+blit_iload_hiqh_pixel(mystique_t *mystique, int r, int g, int b)
+{
+    svga_t   *svga = &mystique->svga;
+    const int n    = mystique->dwgreg.hiqh_src;
+
+    for (;;) {
+        const int32_t pos = mystique->dwgreg.hiqh_pos;
+        const int     s   = (pos < 0) ? 0 : (pos >> 16);
+        const int     w   = (pos < 0) ? 0 : ((pos >> 12) & 0xf);
+        int           out_r = r;
+        int           out_g = g;
+        int           out_b = b;
+        uint32_t      out_data;
+        uint32_t      dst;
+
+        if ((s > n) || ((s == n) && w))
+            break;
+        if (s < n) {
+            out_r = ((mystique->dwgreg.lastpix_r * (16 - w)) + (r * w)) >> 4;
+            out_g = ((mystique->dwgreg.lastpix_g * (16 - w)) + (g * w)) >> 4;
+            out_b = ((mystique->dwgreg.lastpix_b * (16 - w)) + (b * w)) >> 4;
+        }
+
+        if (mystique->dwgreg.xdst >= mystique->dwgreg.cxleft && mystique->dwgreg.xdst <= mystique->dwgreg.cxright && mystique->dwgreg.ydst_lin >= mystique->dwgreg.ytop && mystique->dwgreg.ydst_lin <= mystique->dwgreg.ybot) {
+            switch (mystique->maccess_running & MACCESS_PWIDTH_MASK) {
+                case MACCESS_PWIDTH_16:
+                    out_data                                                                                               = (out_b >> 3) | ((out_g >> 2) << 5) | ((out_r >> 3) << 11);
+                    dst                                                                                                    = ((uint16_t *) svga->vram)[(mystique->dwgreg.ydst_lin + mystique->dwgreg.xdst) & mystique->vram_mask_w];
+                    dst                                                                                                    = bitop(out_data, dst, mystique);
+                    ((uint16_t *) svga->vram)[(mystique->dwgreg.ydst_lin + mystique->dwgreg.xdst) & mystique->vram_mask_w] = dst;
+                    svga->changedvram[((mystique->dwgreg.ydst_lin + mystique->dwgreg.xdst) & mystique->vram_mask_w) >> 11] = changeframecount;
+                    break;
+                case MACCESS_PWIDTH_32:
+                    out_data                                                                                               = out_b | (out_g << 8) | (out_r << 16);
+                    dst                                                                                                    = ((uint32_t *) svga->vram)[(mystique->dwgreg.ydst_lin + mystique->dwgreg.xdst) & mystique->vram_mask_l];
+                    dst                                                                                                    = bitop(out_data, dst, mystique);
+                    ((uint32_t *) svga->vram)[(mystique->dwgreg.ydst_lin + mystique->dwgreg.xdst) & mystique->vram_mask_l] = dst;
+                    svga->changedvram[((mystique->dwgreg.ydst_lin + mystique->dwgreg.xdst) & mystique->vram_mask_l) >> 10] = changeframecount;
+                    break;
+
+                default:
+                    mystique_unimpl("ILOAD_SCALE_HIGH RSTR/RPL BUYUV pwidth %08x\n", mystique->maccess_running & MACCESS_PWIDTH_MASK);
+                    mystique->dwgreg.hiqh_pos += mystique->dwgreg.ar[2];
+                    mystique->dwgreg.xdst = (mystique->dwgreg.xdst + 1) & 0xffff;
+                    return 1;
+            }
+        }
+
+        mystique->dwgreg.hiqh_pos += mystique->dwgreg.ar[2];
+
+        if (mystique->dwgreg.xdst == mystique->dwgreg.fxright) {
+            mystique->dwgreg.xdst = mystique->dwgreg.fxleft;
+            mystique->dwgreg.ydst_lin += (mystique->dwgreg.pitch & PITCH_MASK);
+            mystique->dwgreg.hiqh_pos = mystique->dwgreg.hiqh_pos_line;
+            mystique->dwgreg.hiqh_src = 0;
+            /*Every source line is padded to a dword.*/
+            mystique->dwgreg.iload_rem_count = 0;
+            mystique->dwgreg.iload_rem_data  = 0;
+
+            mystique->dwgreg.length_cur--;
+            if (!mystique->dwgreg.length_cur) {
+                mystique->busy = 0;
+                mystique->blitter_complete_refcount++;
+            }
+            return 1;
+        }
+        mystique->dwgreg.xdst = (mystique->dwgreg.xdst + 1) & 0xffff;
+    }
+
+    mystique->dwgreg.lastpix_r = r;
+    mystique->dwgreg.lastpix_g = g;
+    mystique->dwgreg.lastpix_b = b;
+    mystique->dwgreg.hiqh_src++;
+    return 0;
+}
+
 static void
 blit_iload_iload_high(mystique_t *mystique, uint32_t data, int size)
 {
-    svga_t  *svga = &mystique->svga;
-    uint32_t out_data;
     int      y0;
     int      y1;
     int      u;
@@ -5290,72 +5375,9 @@ blit_iload_iload_high(mystique_t *mystique, uint32_t data, int size)
             return;
     }
 
-    while (size >= 16) {
-        if (mystique->dwgreg.xdst >= mystique->dwgreg.cxleft && mystique->dwgreg.xdst <= mystique->dwgreg.cxright && mystique->dwgreg.ydst_lin >= mystique->dwgreg.ytop && mystique->dwgreg.ydst_lin <= mystique->dwgreg.ybot) {
-            uint32_t dst;
-            int      f1    = (mystique->dwgreg.ar[6] >> 12) & 0xf;
-            int      f0    = 0x10 - f1;
-            int      out_r = ((mystique->dwgreg.lastpix_r * f0) + (r * f1)) >> 4;
-            int      out_g = ((mystique->dwgreg.lastpix_g * f0) + (g * f1)) >> 4;
-            int      out_b = ((mystique->dwgreg.lastpix_b * f0) + (b * f1)) >> 4;
-
-            switch (mystique->maccess_running & MACCESS_PWIDTH_MASK) {
-                case MACCESS_PWIDTH_16:
-                    out_data                                                                                               = (out_b >> 3) | ((out_g >> 2) << 5) | ((out_r >> 3) << 11);
-                    dst                                                                                                    = ((uint16_t *) svga->vram)[(mystique->dwgreg.ydst_lin + mystique->dwgreg.xdst) & mystique->vram_mask_w];
-                    dst                                                                                                    = bitop(out_data, dst, mystique);
-                    ((uint16_t *) svga->vram)[(mystique->dwgreg.ydst_lin + mystique->dwgreg.xdst) & mystique->vram_mask_w] = dst;
-                    svga->changedvram[((mystique->dwgreg.ydst_lin + mystique->dwgreg.xdst) & mystique->vram_mask_w) >> 11] = changeframecount;
-                    break;
-                case MACCESS_PWIDTH_32:
-                    out_data                                                                                               = out_b | (out_g << 8) | (out_r << 16);
-                    dst                                                                                                    = ((uint32_t *) svga->vram)[(mystique->dwgreg.ydst_lin + mystique->dwgreg.xdst) & mystique->vram_mask_l];
-                    dst                                                                                                    = bitop(out_data, dst, mystique);
-                    ((uint32_t *) svga->vram)[(mystique->dwgreg.ydst_lin + mystique->dwgreg.xdst) & mystique->vram_mask_l] = dst;
-                    svga->changedvram[((mystique->dwgreg.ydst_lin + mystique->dwgreg.xdst) & mystique->vram_mask_l) >> 10] = changeframecount;
-                    break;
-
-                default:
-                    mystique_unimpl("ILOAD_SCALE_HIGH RSTR/RPL BUYUV pwidth %08x\n", mystique->maccess_running & MACCESS_PWIDTH_MASK);
-                    size = 0;
-                    break;
-            }
-        }
-
-        mystique->dwgreg.ar[6] += mystique->dwgreg.ar[2];
-        if ((int32_t) mystique->dwgreg.ar[6] >= 0) {
-            mystique->dwgreg.ar[6] -= 65536;
-            size -= src_bits;
-
-            mystique->dwgreg.lastpix_r = r;
-            mystique->dwgreg.lastpix_g = g;
-            mystique->dwgreg.lastpix_b = b;
-            r                          = next_r;
-            g                          = next_g;
-            b                          = next_b;
-        }
-
-        if (mystique->dwgreg.xdst == mystique->dwgreg.fxright) {
-            mystique->dwgreg.xdst = mystique->dwgreg.fxleft;
-            mystique->dwgreg.ydst_lin += (mystique->dwgreg.pitch & PITCH_MASK);
-            mystique->dwgreg.ar[6]     = mystique->dwgreg.ar[2] - (mystique->dwgreg.fxright - mystique->dwgreg.fxleft);
-            mystique->dwgreg.lastpix_r = 0;
-            mystique->dwgreg.lastpix_g = 0;
-            mystique->dwgreg.lastpix_b = 0;
-            /*Every source line is padded to a dword.*/
-            mystique->dwgreg.iload_rem_count = 0;
-            mystique->dwgreg.iload_rem_data  = 0;
-
-            mystique->dwgreg.length_cur--;
-            if (!mystique->dwgreg.length_cur) {
-                mystique->busy = 0;
-                mystique->blitter_complete_refcount++;
-                break;
-            }
-            break;
-        } else
-            mystique->dwgreg.xdst = (mystique->dwgreg.xdst + 1) & 0xffff;
-    }
+    if ((size < src_bits) || blit_iload_hiqh_pixel(mystique, r, g, b) || (size < (2 * src_bits)))
+        return;
+    blit_iload_hiqh_pixel(mystique, next_r, next_g, next_b);
 }
 
 static void
@@ -7315,6 +7337,9 @@ blit_iload_high(mystique_t *mystique)
                     mystique->dwgreg.iload_rem_count = 0;
                     mystique->busy                   = 1;
                     mystique->dwgreg.words           = 0;
+                    mystique->dwgreg.hiqh_src        = 0;
+                    mystique->dwgreg.hiqh_pos_line   = (int32_t) (mystique->dwgreg.ar[6] - mystique->dwgreg.ar[2]) + 65536;
+                    mystique->dwgreg.hiqh_pos        = mystique->dwgreg.hiqh_pos_line;
                     /* pclog("ILOAD HIGH ATYPE RPL BLTMOD BUYUV busy\n"); */
                     break;
 
@@ -7344,6 +7369,9 @@ blit_iload_highv(mystique_t *mystique)
                     mystique->busy                   = 1;
                     mystique->dwgreg.words           = 0;
                     mystique->dwgreg.highv_line      = 0;
+                    mystique->dwgreg.hiqh_src        = 0;
+                    mystique->dwgreg.hiqh_pos_line   = (int32_t) (mystique->dwgreg.ar[6] - mystique->dwgreg.ar[2]) + 65536;
+                    mystique->dwgreg.hiqh_pos        = mystique->dwgreg.hiqh_pos_line;
                     mystique->dwgreg.lastpix_r       = 0;
                     mystique->dwgreg.lastpix_g       = 0;
                     mystique->dwgreg.lastpix_b       = 0;
