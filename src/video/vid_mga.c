@@ -7427,6 +7427,7 @@ mystique_hwcursor_draw(svga_t *svga, int displine)
     /*The color registers are stored by index, red in the low byte.*/
     const uint32_t    col0   = ((mystique->cursor.col[0] & 0xff) << 16) | (mystique->cursor.col[0] & 0xff00) | ((mystique->cursor.col[0] >> 16) & 0xff);
     const uint32_t    col1   = ((mystique->cursor.col[1] & 0xff) << 16) | (mystique->cursor.col[1] & 0xff00) | ((mystique->cursor.col[1] >> 16) & 0xff);
+    const uint32_t    col2   = ((mystique->cursor.col[2] & 0xff) << 16) | (mystique->cursor.col[2] & 0xff00) | ((mystique->cursor.col[2] >> 16) & 0xff);
 
     if (svga->interlace && svga->hwcursor_oddeven)
         svga->hwcursor_latch.addr += 16;
@@ -7435,6 +7436,19 @@ mystique_hwcursor_draw(svga_t *svga, int displine)
     dat[1] = *(uint64_t *) (&svga->vram[svga->hwcursor_latch.addr + 8]);
     svga->hwcursor_latch.addr += 16;
     switch (mystique->xcurctrl & XCURCTRL_CURMODE_MASK) {
+        case XCURCTRL_CURMODE_3COL:
+            for (uint8_t x = 0; x < 64; x++) {
+                if (dat[1] & (1ULL << 63))
+                    svga->monitor->target_buffer->line[displine][(offset + svga->x_add) & 2047] = (dat[0] & (1ULL << 63)) ? col2 : col1;
+                else if (dat[0] & (1ULL << 63))
+                    svga->monitor->target_buffer->line[displine][(offset + svga->x_add) & 2047] = col0;
+
+                offset++;
+                dat[0] <<= 1;
+                dat[1] <<= 1;
+            }
+            break;
+
         case XCURCTRL_CURMODE_XGA:
             for (uint8_t x = 0; x < 64; x++) {
                 if (!(dat[1] & (1ULL << 63)))
