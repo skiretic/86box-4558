@@ -7435,7 +7435,8 @@ mystique_hwcursor_draw(svga_t *svga, int displine)
     dat[0] = *(uint64_t *) (&svga->vram[svga->hwcursor_latch.addr]);
     dat[1] = *(uint64_t *) (&svga->vram[svga->hwcursor_latch.addr + 8]);
     svga->hwcursor_latch.addr += 16;
-    switch (mystique->xcurctrl & XCURCTRL_CURMODE_MASK) {
+    /* The DAC cursor exists only in the non-VGA modes. */
+    switch ((mystique->crtcext_regs[3] & CRTCX_R3_MGAMODE) ? (mystique->xcurctrl & XCURCTRL_CURMODE_MASK) : 0) {
         case XCURCTRL_CURMODE_3COL:
             for (uint8_t x = 0; x < 64; x++) {
                 if (dat[1] & (1ULL << 63))
