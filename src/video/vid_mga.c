@@ -2680,7 +2680,10 @@ mystique_ctrl_write_b(uint32_t addr, uint8_t val, void *priv)
             break;
 
         case REG_MISC:
+            /*The core re-installs 3A0h-3BFh from ioaddsel alone; this route
+              works with I/O decode off, so re-apply the device's gates.*/
             svga_out(0x3c2, val, svga);
+            mystique_recalc_mapping(mystique);
             break;
 
         case REG_SEQ_IDX:
