@@ -7905,6 +7905,7 @@ mystique_pci_write(UNUSED(int func), int addr, int len, uint8_t val, void *priv)
             else if (mystique->type == MGA_1064SG)
                 val &= 0x7f;
             mystique->pci_regs[0x41] = val;
+            mystique_recalc_mapping(mystique);
             break;
         case 0x42:
             if (mystique->type == MGA_G100)
