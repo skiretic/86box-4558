@@ -1691,6 +1691,7 @@ mystique_write_xreg(mystique_t *mystique, int reg, uint8_t val)
 
         case XREG_XMULCTRL:
             mystique->xmulctrl = val;
+            svga_recalctimings(svga);
             break;
 
         case XREG_XMISCCTRL:
