@@ -1334,6 +1334,8 @@ mystique_recalctimings(svga_t *svga)
                     break;
             }
         }
+        if ((mystique->type == MGA_2064W) || (mystique->type == MGA_2164W))
+            tvp3026_set_render(svga->ramdac, svga);
         /*scroff and crtcrstN are VGA/MGA fields: a driver blanks its mode set with them.*/
         if (svga->scrblank || !(svga->crtc[0x17] & 0x80))
             svga->render = mystique_render_blank;

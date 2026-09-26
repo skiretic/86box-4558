@@ -606,6 +606,48 @@ tvp3026_recalctimings(void *priv, svga_t *svga)
     }
 }
 
+/*32-bit B-G-R-O (Table 2-20 d11/d12): blue in bits 31:24, green 23:16, red 15:8,
+  overlay 7:0; the overlay byte only shows through port-select / color-key switching.*/
+static void
+tvp3026_render_bgro32(svga_t *svga)
+{
+    uint32_t *p;
+    uint32_t  addr;
+    uint32_t  dat;
+
+    if (((svga->displine + svga->y_add) < 0) || (svga->monitor->target_buffer == NULL) ||
+        (svga->monitor->target_buffer->line[svga->displine + svga->y_add] == NULL))
+        return;
+
+    addr = svga->remap_func(svga, svga->memaddr);
+    if (!svga->changedvram[addr >> 12] && !svga->changedvram[(addr >> 12) + 1] && !svga->fullchange)
+        return;
+
+    p = &svga->monitor->target_buffer->line[svga->displine + svga->y_add][svga->x_add];
+    if (svga->firstline_draw == 2000)
+        svga->firstline_draw = svga->displine;
+    svga->lastline_draw = svga->displine;
+
+    for (int x = 0; x <= (svga->hdisp + svga->scrollcache); x++) {
+        addr = svga->remap_required ? svga->remap_func(svga, svga->memaddr) : svga->memaddr;
+        dat  = *(uint32_t *) &svga->vram[addr & svga->vram_display_mask];
+        *p++ = svga_lookup_lut_ram(svga, ((dat << 8) & 0xff0000) | ((dat >> 8) & 0xff00) | (dat >> 24));
+        svga->memaddr += 4;
+    }
+    svga->memaddr &= svga->vram_display_mask;
+}
+
+/*The card picks its Power Graphic renderer by depth; this replaces it for the pixel-bus
+  layouts of Table 2-17 that the depth alone does not tell apart.*/
+void
+tvp3026_set_render(void *priv, svga_t *svga)
+{
+    const tvp3026_ramdac_t *ramdac = (tvp3026_ramdac_t *) priv;
+
+    if ((svga->bpp == 32) && ((ramdac->true_color & 0x0f) == 0x07))
+        svga->render = tvp3026_render_bgro32;
+}
+
 uint32_t
 tvp3026_conv_16to32(svga_t* svga, uint16_t color, uint8_t bpp)
 {
