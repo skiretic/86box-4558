@@ -2111,8 +2111,14 @@ mystique_ctrl_read_b(uint32_t addr, void *priv)
             default:
                 if ((addr & 0x3fff) >= 0x2c00 && (addr & 0x3fff) < 0x2c40)
                     break;
-                if ((addr & 0x3fff) >= 0x3e00)
+                /*G100 video-in / codec status (VSTATUS, CODECHARDPTR, CODECLCODE).
+                  The board has nothing on those ports and VSTATUS flags need
+                  their VIEN enable, so they keep their reset value 0.*/
+                if (mystique->type == MGA_G100 &&
+                    (((addr & 0x3ffc) == 0x3e30) || ((addr & 0x3fff) >= 0x3e4c && (addr & 0x3fff) <= 0x3e53))) {
+                    ret = 0x00;
                     break;
+                }
                 break;
         }
 
