@@ -4073,9 +4073,11 @@ idump_pixel(mystique_t *mystique)
 static uint32_t
 idump_pack24(mystique_t *mystique)
 {
-    uint64_t val64 = 0;
-    uint32_t val   = 0;
-    int      count = 0;
+    uint32_t bltmod     = mystique->dwgreg.dwgctrl_running & DWGCTRL_BLTMOD_MASK;
+    int      idump_bu24 = bltmod == DWGCTRL_BLTMOD_BU24RGB || bltmod == DWGCTRL_BLTMOD_BU24BGR;
+    uint64_t val64      = 0;
+    uint32_t val        = 0;
+    int      count      = 0;
 
     if (mystique->dwgreg.idump_end_of_line) {
         mystique->dwgreg.idump_end_of_line = 0;
@@ -4115,7 +4117,9 @@ idump_pack24(mystique_t *mystique)
                 }
                 break;
             }
-            if (!(mystique->dwgreg.dwgctrl_running & DWGCTRL_LINEAR)) {
+            /*Every line ends on a whole dword, except in a linear 24-bit A/B
+              dump, which is one line of the whole source.*/
+            if (!(mystique->dwgreg.dwgctrl_running & DWGCTRL_LINEAR) || !idump_bu24) {
                 if (count > 8)
                     mystique->dwgreg.idump_end_of_line = 1;
                 else {
