@@ -4048,11 +4048,123 @@ dither(mystique_t *mystique, int r, int g, int b, int x, int y)
     }
 }
 
+/*A source pixel as a dump returns it: the PW24 frame buffer's 24 bits, or a
+  PW32 pixel whole (32-bit A/B) or without its alpha (24-bit A/B). The B
+  formats swap red and blue.*/
+static uint32_t
+idump_pixel(mystique_t *mystique)
+{
+    svga_t  *svga = &mystique->svga;
+    uint32_t bltmod = mystique->dwgreg.dwgctrl_running & DWGCTRL_BLTMOD_MASK;
+    uint32_t v;
+
+    if ((mystique->maccess_running & MACCESS_PWIDTH_MASK) == MACCESS_PWIDTH_24)
+        return (*(uint32_t *) &svga->vram[(mystique->dwgreg.src_addr * 3) & mystique->vram_mask]) & 0xffffff;
+
+    v = ((uint32_t *) svga->vram)[mystique->dwgreg.src_addr & mystique->vram_mask_l];
+    if (bltmod == DWGCTRL_BLTMOD_BU32BGR || bltmod == DWGCTRL_BLTMOD_BU24BGR)
+        v = (v & 0xff00ff00) | ((v >> 16) & 0xff) | ((v & 0xff) << 16);
+    if (bltmod == DWGCTRL_BLTMOD_BU24RGB || bltmod == DWGCTRL_BLTMOD_BU24BGR)
+        v &= 0xffffff;
+    return v;
+}
+
+/*One dword of a 24-bit packed dump (24-bit A/B, PW24 raw).*/
+static uint32_t
+idump_pack24(mystique_t *mystique)
+{
+    uint64_t val64 = 0;
+    uint32_t val   = 0;
+    int      count = 0;
+
+    if (mystique->dwgreg.idump_end_of_line) {
+        mystique->dwgreg.idump_end_of_line = 0;
+        val                                = mystique->dwgreg.iload_rem_data;
+        mystique->dwgreg.iload_rem_count   = 0;
+        mystique->dwgreg.iload_rem_data    = 0;
+        if (!mystique->dwgreg.length_cur) {
+            mystique->busy = 0;
+            mystique->blitter_complete_refcount++;
+        }
+        return val;
+    }
+
+    count += mystique->dwgreg.iload_rem_count;
+    val64 = mystique->dwgreg.iload_rem_data;
+
+    while ((count < 32) && !mystique->dwgreg.idump_end_of_line) {
+        val64 |= (uint64_t) idump_pixel(mystique) << count;
+
+        if (mystique->dwgreg.src_addr == mystique->dwgreg.ar[0]) {
+            mystique->dwgreg.ar[0] += mystique->dwgreg.ar[5];
+            mystique->dwgreg.ar[3] += mystique->dwgreg.ar[5];
+            mystique->dwgreg.src_addr = mystique->dwgreg.ar[3];
+        } else
+            mystique->dwgreg.src_addr++;
+
+        if (mystique->dwgreg.xdst == mystique->dwgreg.fxright) {
+            mystique->dwgreg.xdst = mystique->dwgreg.fxleft;
+            mystique->dwgreg.length_cur--;
+            if (!mystique->dwgreg.length_cur) {
+                if (count > 8)
+                    mystique->dwgreg.idump_end_of_line = 1;
+                else {
+                    count          = 32;
+                    mystique->busy = 0;
+                    mystique->blitter_complete_refcount++;
+                }
+                break;
+            }
+            if (!(mystique->dwgreg.dwgctrl_running & DWGCTRL_LINEAR)) {
+                if (count > 8)
+                    mystique->dwgreg.idump_end_of_line = 1;
+                else {
+                    count = 32;
+                    break;
+                }
+            }
+        } else
+            mystique->dwgreg.xdst = (mystique->dwgreg.xdst + 1) & 0xffff;
+
+        count += 24;
+    }
+    if (count > 32)
+        mystique->dwgreg.iload_rem_count = count - 32;
+    else
+        mystique->dwgreg.iload_rem_count = 0;
+    mystique->dwgreg.iload_rem_data = (uint32_t) (val64 >> 32);
+    return val64 & 0xffffffff;
+}
+
+/*One dword of a 32-bit dump (32-bit A/B): one pixel.*/
+static uint32_t
+idump_word32(mystique_t *mystique)
+{
+    uint32_t val = idump_pixel(mystique);
+
+    if (mystique->dwgreg.src_addr == mystique->dwgreg.ar[0]) {
+        mystique->dwgreg.ar[0] += mystique->dwgreg.ar[5];
+        mystique->dwgreg.ar[3] += mystique->dwgreg.ar[5];
+        mystique->dwgreg.src_addr = mystique->dwgreg.ar[3];
+    } else
+        mystique->dwgreg.src_addr++;
+
+    if (mystique->dwgreg.xdst == mystique->dwgreg.fxright) {
+        mystique->dwgreg.xdst = mystique->dwgreg.fxleft;
+        mystique->dwgreg.length_cur--;
+        if (!mystique->dwgreg.length_cur) {
+            mystique->busy = 0;
+            mystique->blitter_complete_refcount++;
+        }
+    } else
+        mystique->dwgreg.xdst = (mystique->dwgreg.xdst + 1) & 0xffff;
+    return val;
+}
+
 static uint32_t
 blit_idump_idump(mystique_t *mystique)
 {
     svga_t  *svga  = &mystique->svga;
-    uint64_t val64 = 0;
     uint32_t val   = 0;
     int      count = 0;
 
@@ -4117,86 +4229,11 @@ blit_idump_idump(mystique_t *mystique)
                             break;
 
                         case MACCESS_PWIDTH_24:
-                            if (mystique->dwgreg.idump_end_of_line) {
-                                mystique->dwgreg.idump_end_of_line = 0;
-                                val                                = mystique->dwgreg.iload_rem_data;
-                                mystique->dwgreg.iload_rem_count   = 0;
-                                mystique->dwgreg.iload_rem_data    = 0;
-                                if (!mystique->dwgreg.length_cur) {
-                                    mystique->busy = 0;
-                                    mystique->blitter_complete_refcount++;
-                                }
-                                break;
-                            }
-
-                            count += mystique->dwgreg.iload_rem_count;
-                            val64 = mystique->dwgreg.iload_rem_data;
-
-                            while ((count < 32) && !mystique->dwgreg.idump_end_of_line) {
-                                val64 |= (uint64_t) ((*(uint32_t *) &svga->vram[(mystique->dwgreg.src_addr * 3) & mystique->vram_mask]) & 0xffffff) << count;
-
-                                if (mystique->dwgreg.src_addr == mystique->dwgreg.ar[0]) {
-                                    mystique->dwgreg.ar[0] += mystique->dwgreg.ar[5];
-                                    mystique->dwgreg.ar[3] += mystique->dwgreg.ar[5];
-                                    mystique->dwgreg.src_addr = mystique->dwgreg.ar[3];
-                                } else
-                                    mystique->dwgreg.src_addr++;
-
-                                if (mystique->dwgreg.xdst == mystique->dwgreg.fxright) {
-                                    mystique->dwgreg.xdst = mystique->dwgreg.fxleft;
-                                    mystique->dwgreg.length_cur--;
-                                    if (!mystique->dwgreg.length_cur) {
-                                        if (count > 8)
-                                            mystique->dwgreg.idump_end_of_line = 1;
-                                        else {
-                                            count          = 32;
-                                            mystique->busy = 0;
-                                            mystique->blitter_complete_refcount++;
-                                        }
-                                        break;
-                                    }
-                                    if (!(mystique->dwgreg.dwgctrl_running & DWGCTRL_LINEAR)) {
-                                        if (count > 8)
-                                            mystique->dwgreg.idump_end_of_line = 1;
-                                        else {
-                                            count = 32;
-                                            break;
-                                        }
-                                    }
-                                } else
-                                    mystique->dwgreg.xdst = (mystique->dwgreg.xdst + 1) & 0xffff;
-
-                                count += 24;
-                            }
-                            if (count > 32)
-                                mystique->dwgreg.iload_rem_count = count - 32;
-                            else
-                                mystique->dwgreg.iload_rem_count = 0;
-                            mystique->dwgreg.iload_rem_data = (uint32_t) (val64 >> 32);
-                            val                             = val64 & 0xffffffff;
+                            val = idump_pack24(mystique);
                             break;
 
                         case MACCESS_PWIDTH_32:
-                            val = (((uint32_t *) svga->vram)[mystique->dwgreg.src_addr & mystique->vram_mask_l] << count);
-
-                            if (mystique->dwgreg.src_addr == mystique->dwgreg.ar[0]) {
-                                mystique->dwgreg.ar[0] += mystique->dwgreg.ar[5];
-                                mystique->dwgreg.ar[3] += mystique->dwgreg.ar[5];
-                                mystique->dwgreg.src_addr = mystique->dwgreg.ar[3];
-                            } else
-                                mystique->dwgreg.src_addr++;
-
-                            if (mystique->dwgreg.xdst == mystique->dwgreg.fxright) {
-                                mystique->dwgreg.xdst = mystique->dwgreg.fxleft;
-                                mystique->dwgreg.length_cur--;
-                                if (!mystique->dwgreg.length_cur) {
-                                    mystique->busy = 0;
-                                    mystique->blitter_complete_refcount++;
-                                    break;
-                                }
-                                break;
-                            } else
-                                mystique->dwgreg.xdst = (mystique->dwgreg.xdst + 1) & 0xffff;
+                            val = idump_word32(mystique);
                             break;
 
                         default:
@@ -4206,6 +4243,25 @@ blit_idump_idump(mystique_t *mystique)
                                 mystique->blitter_complete_refcount++;
                             }
                             break;
+                    }
+                    break;
+
+                /*The byte-order and packed formats are defined from a 32 bpp
+                  frame buffer only.*/
+                case DWGCTRL_BLTMOD_BU32BGR:
+                case DWGCTRL_BLTMOD_BU24RGB:
+                case DWGCTRL_BLTMOD_BU24BGR:
+                    if ((mystique->maccess_running & MACCESS_PWIDTH_MASK) == MACCESS_PWIDTH_32) {
+                        if ((mystique->dwgreg.dwgctrl_running & DWGCTRL_BLTMOD_MASK) == DWGCTRL_BLTMOD_BU32BGR)
+                            val = idump_word32(mystique);
+                        else
+                            val = idump_pack24(mystique);
+                        break;
+                    }
+                    mystique_unimpl("IDUMP bltmod %08x PWIDTH %x\n", mystique->dwgreg.dwgctrl_running & DWGCTRL_BLTMOD_MASK, mystique->maccess_running & MACCESS_PWIDTH_MASK);
+                    if (mystique->busy) {
+                        mystique->busy = 0;
+                        mystique->blitter_complete_refcount++;
                     }
                     break;
 
