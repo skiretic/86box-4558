@@ -637,6 +637,40 @@ tvp3026_render_bgro32(svga_t *svga)
     svga->memaddr &= svga->vram_display_mask;
 }
 
+/*Packed-24 B-G-R (Table 2-19 d5-d8): each pixel's three bytes are red, green, blue in
+  frame-buffer order, the reverse of packed R-G-B.*/
+static void
+tvp3026_render_bgr24(svga_t *svga)
+{
+    uint32_t *p;
+    uint32_t  addr;
+    uint32_t  dat;
+
+    if (((svga->displine + svga->y_add) < 0) || (svga->monitor->target_buffer == NULL) ||
+        (svga->monitor->target_buffer->line[svga->displine + svga->y_add] == NULL))
+        return;
+
+    addr = svga->remap_func(svga, svga->memaddr);
+    if (!svga->changedvram[addr >> 12] && !svga->changedvram[(addr >> 12) + 1] && !svga->fullchange)
+        return;
+
+    p = &svga->monitor->target_buffer->line[svga->displine + svga->y_add][svga->x_add];
+    if (svga->firstline_draw == 2000)
+        svga->firstline_draw = svga->displine;
+    svga->lastline_draw = svga->displine;
+
+    for (int x = 0; x <= (svga->hdisp + svga->scrollcache); x++) {
+        dat = 0;
+        for (int i = 0; i < 3; i++) {
+            addr = svga->remap_required ? svga->remap_func(svga, svga->memaddr + i) : (svga->memaddr + i);
+            dat  = (dat << 8) | svga->vram[addr & svga->vram_display_mask];
+        }
+        *p++ = svga_lookup_lut_ram(svga, dat);
+        svga->memaddr += 3;
+    }
+    svga->memaddr &= svga->vram_display_mask;
+}
+
 /*The card picks its Power Graphic renderer by depth; this replaces it for the pixel-bus
   layouts of Table 2-17 that the depth alone does not tell apart.*/
 void
@@ -646,6 +680,8 @@ tvp3026_set_render(void *priv, svga_t *svga)
 
     if ((svga->bpp == 32) && ((ramdac->true_color & 0x0f) == 0x07))
         svga->render = tvp3026_render_bgro32;
+    else if ((svga->bpp == 24) && ((ramdac->true_color & 0x07) == 0x07))
+        svga->render = tvp3026_render_bgr24;
 }
 
 uint32_t
