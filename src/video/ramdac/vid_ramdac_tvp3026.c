@@ -671,6 +671,41 @@ tvp3026_render_bgr24(svga_t *svga)
     svga->memaddr &= svga->vram_display_mask;
 }
 
+/*4-bit pseudo-color (Table 2-18 s1-s4): two pixels per byte, bits 3:0 first. The pixel,
+  after the read mask, is the palette address's low nibble; the palette page gives the
+  high one (2.1.3).*/
+static void
+tvp3026_render_4bpp(svga_t *svga)
+{
+    const tvp3026_ramdac_t *ramdac = (tvp3026_ramdac_t *) svga->ramdac;
+    uint32_t               *p;
+    uint32_t                addr;
+    uint8_t                 dat;
+    uint8_t                 page = ramdac->ppr & 0xf0;
+
+    if (((svga->displine + svga->y_add) < 0) || (svga->monitor->target_buffer == NULL) ||
+        (svga->monitor->target_buffer->line[svga->displine + svga->y_add] == NULL))
+        return;
+
+    addr = svga->remap_func(svga, svga->memaddr);
+    if (!svga->changedvram[addr >> 12] && !svga->changedvram[(addr >> 12) + 1] && !svga->fullchange)
+        return;
+
+    p = &svga->monitor->target_buffer->line[svga->displine + svga->y_add][svga->x_add];
+    if (svga->firstline_draw == 2000)
+        svga->firstline_draw = svga->displine;
+    svga->lastline_draw = svga->displine;
+
+    for (int x = 0; x <= (svga->hdisp + svga->scrollcache); x += 2) {
+        addr = svga->remap_required ? svga->remap_func(svga, svga->memaddr) : svga->memaddr;
+        dat  = svga->vram[addr & svga->vram_display_mask];
+        *p++ = svga->map8[page | (dat & svga->dac_mask & 0x0f)];
+        *p++ = svga->map8[page | ((dat >> 4) & svga->dac_mask & 0x0f)];
+        svga->memaddr++;
+    }
+    svga->memaddr &= svga->vram_display_mask;
+}
+
 /*The card picks its Power Graphic renderer by depth; this replaces it for the pixel-bus
   layouts of Table 2-17 that the depth alone does not tell apart.*/
 void
@@ -682,6 +717,8 @@ tvp3026_set_render(void *priv, svga_t *svga)
         svga->render = tvp3026_render_bgro32;
     else if ((svga->bpp == 24) && ((ramdac->true_color & 0x07) == 0x07))
         svga->render = tvp3026_render_bgr24;
+    else if (svga->bpp == 4)
+        svga->render = tvp3026_render_4bpp;
 }
 
 uint32_t
