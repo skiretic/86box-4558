@@ -687,7 +687,20 @@ tvp3026_set_render(void *priv, svga_t *svga)
 uint32_t
 tvp3026_conv_16to32(svga_t* svga, uint16_t color, uint8_t bpp)
 {
-    uint32_t ret = 0x00000000;
+    const tvp3026_ramdac_t *ramdac = (tvp3026_ramdac_t *) svga->ramdac;
+    uint32_t                ret    = 0x00000000;
+
+    /*6-6-4 (Table 2-20 d19): red 15:10, green 9:4, blue 3:0. The widening to 8 bits is
+      not stated; it follows the 5-6-5 path (full scale, or MSB-aligned palette index).*/
+    if ((bpp == 16) && ((ramdac->true_color & 0x0f) == 0x03)) {
+        uint8_t r = (color >> 10) & 0x3f;
+        uint8_t g = (color >> 4) & 0x3f;
+        uint8_t b = color & 0x0f;
+
+        if (svga->lut_map)
+            return makecol(getcolr(svga->pallook[r << 2]), getcolg(svga->pallook[g << 2]), getcolb(svga->pallook[b << 4]));
+        return makecol((r * 255) / 63, (g * 255) / 63, (b * 255) / 15);
+    }
 
     if (svga->lut_map) {
         if (bpp == 15) {
