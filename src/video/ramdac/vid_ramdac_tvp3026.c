@@ -682,6 +682,7 @@ tvp3026_render_4bpp(svga_t *svga)
     uint32_t                addr;
     uint8_t                 dat;
     uint8_t                 page = ramdac->ppr & 0xf0;
+    int                     swap = !!(ramdac->mcr & 0x20); /*s5-s8: bits 7:4 first*/
 
     if (((svga->displine + svga->y_add) < 0) || (svga->monitor->target_buffer == NULL) ||
         (svga->monitor->target_buffer->line[svga->displine + svga->y_add] == NULL))
@@ -699,6 +700,8 @@ tvp3026_render_4bpp(svga_t *svga)
     for (int x = 0; x <= (svga->hdisp + svga->scrollcache); x += 2) {
         addr = svga->remap_required ? svga->remap_func(svga, svga->memaddr) : svga->memaddr;
         dat  = svga->vram[addr & svga->vram_display_mask];
+        if (swap)
+            dat = (dat << 4) | (dat >> 4);
         *p++ = svga->map8[page | (dat & svga->dac_mask & 0x0f)];
         *p++ = svga->map8[page | ((dat >> 4) & svga->dac_mask & 0x0f)];
         svga->memaddr++;
