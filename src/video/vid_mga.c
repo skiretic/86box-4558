@@ -1136,6 +1136,41 @@ mystique_render_blank(svga_t *svga)
         memset(&svga->monitor->target_buffer->line[y][svga->x_add], 0, svga->hdisp * sizeof(uint32_t));
 }
 
+/*BPP32DIR: bits 23:0 go straight to the DACs, bits 31:24 are an overlay index.
+  A pixel whose masked overlay index does not equal the color key shows that
+  palette entry instead.*/
+static void
+mystique_render_bpp32dir(svga_t *svga)
+{
+    const mystique_t *mystique = (mystique_t *) svga->priv;
+    const uint32_t    mask     = mystique->xcolkeymskl | (mystique->xcolkeymskh << 8);
+    const uint32_t    key      = mystique->xcolkeyl | (mystique->xcolkeyh << 8);
+    uint32_t         *p;
+    uint32_t          addr;
+    uint32_t          dat;
+
+    if (((svga->displine + svga->y_add) < 0) || (svga->monitor->target_buffer == NULL) ||
+        (svga->monitor->target_buffer->line[svga->displine + svga->y_add] == NULL))
+        return;
+
+    addr = svga->remap_func(svga, svga->memaddr);
+    if (!svga->changedvram[addr >> 12] && !svga->changedvram[(addr >> 12) + 1] && !svga->fullchange)
+        return;
+
+    p = &svga->monitor->target_buffer->line[svga->displine + svga->y_add][svga->x_add];
+    if (svga->firstline_draw == 2000)
+        svga->firstline_draw = svga->displine;
+    svga->lastline_draw = svga->displine;
+
+    for (int x = 0; x <= (svga->hdisp + svga->scrollcache); x++) {
+        addr = svga->remap_required ? svga->remap_func(svga, svga->memaddr) : svga->memaddr;
+        dat  = *(uint32_t *) &svga->vram[addr & svga->vram_display_mask];
+        *p++ = ((mask & (dat >> 24)) == key) ? (dat & 0xffffff) : svga->pallook[dat >> 24];
+        svga->memaddr += 4;
+    }
+    svga->memaddr &= svga->vram_display_mask;
+}
+
 /*hzoom replicates each pixel in the DAC and slows the address counter by
   the same factor: fetch hdisp / zoom pixels, then widen the line in place.
   A line the base renderer skipped (unchanged) already holds the wide copy.*/
@@ -1277,8 +1312,11 @@ mystique_recalctimings(svga_t *svga)
                         svga->bpp    = 24;
                         break;
                     case XMULCTRL_DEPTH_32:
-                    case XMULCTRL_DEPTH_32_OVERLAYED:
                         svga->render = svga_render_32bpp_highres;
+                        svga->bpp    = 32;
+                        break;
+                    case XMULCTRL_DEPTH_32_OVERLAYED:
+                        svga->render = mystique_render_bpp32dir;
                         svga->bpp    = 32;
                         break;
 
