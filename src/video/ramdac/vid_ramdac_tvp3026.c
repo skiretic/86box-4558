@@ -701,6 +701,17 @@ tvp3026_conv_16to32(svga_t* svga, uint16_t color, uint8_t bpp)
             return makecol(getcolr(svga->pallook[r << 2]), getcolg(svga->pallook[g << 2]), getcolb(svga->pallook[b << 4]));
         return makecol((r * 255) / 63, (g * 255) / 63, (b * 255) / 15);
     }
+    /*4-4-4-4 (d22): red 15:12, green 11:8, blue 7:4; the overlay nibble 3:0 only shows
+      through port-select / color-key switching.*/
+    if ((bpp == 16) && ((ramdac->true_color & 0x0f) == 0x01)) {
+        uint8_t r = (color >> 12) & 0x0f;
+        uint8_t g = (color >> 8) & 0x0f;
+        uint8_t b = (color >> 4) & 0x0f;
+
+        if (svga->lut_map)
+            return makecol(getcolr(svga->pallook[r << 4]), getcolg(svga->pallook[g << 4]), getcolb(svga->pallook[b << 4]));
+        return makecol(r * 0x11, g * 0x11, b * 0x11);
+    }
 
     if (svga->lut_map) {
         if (bpp == 15) {
